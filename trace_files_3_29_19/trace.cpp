@@ -131,6 +131,34 @@ void IP_icmp_HeadFunc(const u_char * packet_data){
 
 /**
  * @brief
+ * Structure defined for the UDP header
+*/
+struct UDPHead{
+    uint16_t source;
+    uint16_t destination;
+    uint16_t length;
+    uint16_t check_sum;
+};
+
+/**
+ * @brief
+ * Function stores the UDP header information based on the Network data
+ * and displays the source, destination port number.
+ * 
+ * @param packet_data
+*/
+void UDP_head_Func(const u_char * packet_data){
+    UDPHead UDPhead;
+    memcpy(&UDPhead,packet_data + sizeof(EthernetHead) + sizeof(IPHead),sizeof(UDPHead));
+    printf("\n");
+    printf("\tUDP Header\n");
+    printf("\t\tSource Port: : %d\n",ntohs(UDPhead.source));
+    printf("\t\tDest Port: : %d\n",ntohs(UDPhead.destination));
+    cout<<endl;
+}
+
+/**
+ * @brief
  * provides the IP header information.
  * Also checks if the protocol type is icmp then
  * executes the icmp head function to display it's
@@ -149,20 +177,34 @@ void IPHeadFunc(const u_char * packet_data){
     u_int8_t len =  IPhead.HeaderLen*4;
 
     //performing the checksum on the Ip header
-    u_int16_t checkSumAns = in_cksum((unsigned short *)&IPhead, IPhead.HeaderLen);
+    u_int16_t checkSumAns = in_cksum((u_int16_t *)&IPhead, IPhead.HeaderLen);
 
     cout<<"\tIP Header"<<endl;
     printf("\t\tHeader Len: %d (Bytes)\n",len);
     printf("\t\tTOS: 0x%x\n",IPhead.TOS);
     printf("\t\tTTL: %d\n",IPhead.TTL);
     printf("\t\tIP PDU LEN: %d (Bytes)\n",pdu);
-    IPhead.Protocol == 1 ? printf("\t\tProtocol: ICMP\n") : printf("\t\tProtocol: unknown\n");
+    if(IPhead.Protocol == 1){
+        printf("\t\tProtocol: ICMP\n");
+    }
+    else if(IPhead.Protocol == 17){
+        printf("\t\tProtocol: UDP\n");
+    }
+    else if(IPhead.Protocol == 6){
+        printf("\t\tProtocol: TCP\n");
+    }
+    else{
+        printf("\t\tProtocol: unknown\n");
+    }
     IPhead.Checksum == checkSumAns ? printf("\t\tChecksum: Correct (0x%x)\n",IPhead.Checksum) : printf("\t\tChecksum: Incorrect (0x%x)\n",IPhead.Checksum);
     cout<<"\t\tSender IP: "<<inet_ntop(AF_INET,(struct in_addr*)IPhead.SenderIp,HostIPAddr,INET_ADDRSTRLEN)<<endl;
     cout<<"\t\tDest IP: "<<inet_ntop(AF_INET,(struct in_addr*)IPhead.Dest_Ip,HostIPAddr,INET_ADDRSTRLEN)<<endl;
 
     if(IPhead.Protocol == 1){
         IP_icmp_HeadFunc(packet_data);
+    }
+    else if(IPhead.Protocol == 17){
+        UDP_head_Func(packet_data);
     }
 }
 
@@ -230,7 +272,7 @@ void ARPHeadFunc(const u_char * packet_data){
 
 int main(){
     char errbuf[PCAP_ERRBUF_SIZE];
-    pcap_t * readFile = pcap_open_offline("IP_bad_checksum.pcap", errbuf);
+    pcap_t * readFile = pcap_open_offline("UDPfile.pcap", errbuf);
     struct pcap_pkthdr *header;   // Packet header
     const u_char *packet_data;
     int result = 1;
