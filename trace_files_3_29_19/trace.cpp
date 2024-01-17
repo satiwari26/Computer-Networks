@@ -3,13 +3,8 @@
 #include <cstring>
 #include <vector>
 #include <netinet/ether.h>
-#include <net/if_arp.h>
 
 using namespace std;
-
-/*Note to self: Need to verify that checksum for IP is working
-*Also need to get the icmp type to work, the first packet is not outputting the
-*right expect value in the result*/
 
 /**
  * @brief
@@ -39,40 +34,14 @@ struct ARPHead{
 
 /**
  * @brief
- * checksum algorithm provided by the professor
- * will be used to detect the error and return the
- * answer.
- * @param addr, len
+ * Structure defined for the UDP header
 */
-unsigned short in_cksum(unsigned short *addr,int len)
-{
-        int sum = 0;
-        u_short answer = 0;
-        u_short *w = addr;
-        int nleft = len;
-
-        /*
-         * Our algorithm is simple, using a 32 bit accumulator (sum), we add
-         * sequential 16 bit words to it, and at the end, fold back all the
-         * carry bits from the top 16 bits into the lower 16 bits.
-         */
-        while (nleft > 1)  {
-                sum += *w++;
-                nleft -= 2;
-        }
-
-        /* mop up an odd byte, if necessary */
-        if (nleft == 1) {
-                *(u_char *)(&answer) = *(u_char *)w ;
-                sum += answer;
-        }
-
-        /* add back carry outs from top 16 bits to low 16 bits */
-        sum = (sum >> 16) + (sum & 0xffff);     /* add hi 16 to low 16 */
-        sum += (sum >> 16);                     /* add carry */
-        answer = ~sum;                          /* truncate to 16 bits */
-        return(answer);
-}
+struct UDPHead{
+    uint16_t source;
+    uint16_t destination;
+    uint16_t length;
+    uint16_t check_sum;
+};
 
 /**
  * @brief
@@ -106,6 +75,69 @@ struct IP_icmp{
     uint8_t unionfields[4];
 };
 
+struct singleBitStr{
+    u_int16_t vars : 1;
+};
+
+struct TCPHead{
+    u_int16_t sourcePort;
+    u_int16_t destPort;
+    u_int32_t sequence;
+    u_int32_t ackNumber;
+    u_int8_t Do : 4;
+    u_int8_t RSV : 4;
+
+    u_int8_t fin : 1;
+    u_int8_t syn : 1;
+    u_int8_t rst : 1;
+    u_int8_t psh : 1;
+    u_int8_t ack : 1;
+    u_int8_t urg : 1;
+    u_int8_t res2 : 2;
+
+    u_int16_t window;
+    u_int16_t checksum;
+    u_int16_t urgentPointer;
+};
+
+
+/**
+ * @brief
+ * checksum algorithm provided by the professor
+ * will be used to detect the error and return the
+ * answer.
+ * @param addr, len
+*/
+unsigned short in_cksum(unsigned short *addr,int len)
+{
+    int sum = 0;
+    u_short answer = 0;
+    u_short *w = addr;
+    int nleft = len;
+
+    /*
+        * Our algorithm is simple, using a 32 bit accumulator (sum), we add
+        * sequential 16 bit words to it, and at the end, fold back all the
+        * carry bits from the top 16 bits into the lower 16 bits.
+        */
+    while (nleft > 1)  {
+            sum += *w++;
+            nleft -= 2;
+    }
+
+    /* mop up an odd byte, if necessary */
+    if (nleft == 1) {
+            *(u_char *)(&answer) = *(u_char *)w ;
+            sum += answer;
+    }
+
+    /* add back carry outs from top 16 bits to low 16 bits */
+    sum = (sum >> 16) + (sum & 0xffff);     /* add hi 16 to low 16 */
+    sum += (sum >> 16);                     /* add carry */
+    answer = ~sum;                          /* truncate to 16 bits */
+    return(answer);
+}
+
 /**
  * @brief
  * provides the information on the icmHead.
@@ -113,9 +145,10 @@ struct IP_icmp{
  * value of type from the network packet
  * @param packet_data
 */
-void IP_icmp_HeadFunc(const u_char * packet_data){
+void IP_icmp_HeadFunc(const u_char * packet_data, const IPHead IPhead){
     IP_icmp IP_icmHead;
-    memcpy(&IP_icmHead,packet_data + sizeof(EthernetHead) + sizeof(IPHead),sizeof(IP_icmp));
+    
+    memcpy(&IP_icmHead,packet_data + sizeof(EthernetHead) + IPhead.HeaderLen*4,sizeof(IP_icmp));
     cout<<endl;
     cout<<"\tICMP Header"<<endl;
     if(IP_icmHead.type == 0){
@@ -125,20 +158,9 @@ void IP_icmp_HeadFunc(const u_char * packet_data){
         printf("\t\tType: Request\n\n");
     }
     else{
-        printf("\t\tType: %d\n\n",IP_icmHead.type);
+        printf("\t\tType: %u\n\n",IP_icmHead.type);
     }
 }
-
-/**
- * @brief
- * Structure defined for the UDP header
-*/
-struct UDPHead{
-    uint16_t source;
-    uint16_t destination;
-    uint16_t length;
-    uint16_t check_sum;
-};
 
 /**
  * @brief
@@ -147,13 +169,36 @@ struct UDPHead{
  * 
  * @param packet_data
 */
-void UDP_head_Func(const u_char * packet_data){
+void UDP_head_Func(const u_char * packet_data, const IPHead IPhead){
     UDPHead UDPhead;
-    memcpy(&UDPhead,packet_data + sizeof(EthernetHead) + sizeof(IPHead),sizeof(UDPHead));
+    memcpy(&UDPhead,packet_data + sizeof(EthernetHead) + IPhead.HeaderLen*4,sizeof(UDPHead));
     printf("\n");
     printf("\tUDP Header\n");
-    printf("\t\tSource Port: : %d\n",ntohs(UDPhead.source));
-    printf("\t\tDest Port: : %d\n",ntohs(UDPhead.destination));
+    printf("\t\tSource Port: : %u\n",ntohs(UDPhead.source));
+    printf("\t\tDest Port: : %u\n",ntohs(UDPhead.destination));
+    cout<<endl;
+}
+
+
+void TCPheadFunc(const u_char * packet_data,const IPHead IPhead){
+    TCPHead TCPhead;
+    memcpy(&TCPhead,packet_data + sizeof(EthernetHead) + IPhead.HeaderLen*4,sizeof(TCPHead));
+    cout<<endl;
+    printf("\tTCP Header\n");
+    printf("\t\tSource Port: : %u\n",ntohs(TCPhead.sourcePort));
+    printf("\t\tDest Port: : %u\n",ntohs(TCPhead.destPort));
+    printf("\t\tSequence Number: : %u\n",ntohl(TCPhead.sequence));
+    u_int32_t ackNumber = ntohl(TCPhead.ackNumber);
+    ackNumber == 0 ? printf("\t\tAck Number: : <not valid>\n") : printf("\t\tAck Number: : %u\n",ntohl(TCPhead.ackNumber));
+    //print flags
+    TCPhead.ack == 0 ? printf("\t\tACK Flag: : No\n") : printf("\t\tACK Flag: : Yes\n");
+    TCPhead.syn == 0 ? printf("\t\tSYN Flag: : No\n") : printf("\t\tSYN Flag: : Yes\n");
+    TCPhead.rst == 0 ? printf("\t\tRST Flag: : No\n") : printf("\t\tRST Flag: : Yes\n");
+    TCPhead.fin == 0 ? printf("\t\tFIN Flag: : No\n") : printf("\t\tFIN Flag: : Yes\n");
+
+    printf("\t\tWindow Size: %u\n",ntohs(TCPhead.window));
+    printf("\t\tChecksum: (0x%x)\n",ntohs(TCPhead.checksum));
+    
     cout<<endl;
 }
 
@@ -177,13 +222,13 @@ void IPHeadFunc(const u_char * packet_data){
     u_int8_t len =  IPhead.HeaderLen*4;
 
     //performing the checksum on the Ip header
-    u_int16_t checkSumAns = in_cksum((u_int16_t *)&IPhead, IPhead.HeaderLen);
+    u_int16_t checkSumAns = in_cksum((u_int16_t *)&IPhead, IPhead.HeaderLen*4);
 
     cout<<"\tIP Header"<<endl;
-    printf("\t\tHeader Len: %d (Bytes)\n",len);
+    printf("\t\tHeader Len: %u (Bytes)\n",len);
     printf("\t\tTOS: 0x%x\n",IPhead.TOS);
-    printf("\t\tTTL: %d\n",IPhead.TTL);
-    printf("\t\tIP PDU LEN: %d (Bytes)\n",pdu);
+    printf("\t\tTTL: %u\n",IPhead.TTL);
+    printf("\t\tIP PDU LEN: %u (Bytes)\n",pdu);
     if(IPhead.Protocol == 1){
         printf("\t\tProtocol: ICMP\n");
     }
@@ -196,15 +241,18 @@ void IPHeadFunc(const u_char * packet_data){
     else{
         printf("\t\tProtocol: unknown\n");
     }
-    IPhead.Checksum == checkSumAns ? printf("\t\tChecksum: Correct (0x%x)\n",IPhead.Checksum) : printf("\t\tChecksum: Incorrect (0x%x)\n",IPhead.Checksum);
+    checkSumAns == 0 ? printf("\t\tChecksum: Correct (0x%x)\n",IPhead.Checksum) : printf("\t\tChecksum: Incorrect (0x%x)\n",IPhead.Checksum);
     cout<<"\t\tSender IP: "<<inet_ntop(AF_INET,(struct in_addr*)IPhead.SenderIp,HostIPAddr,INET_ADDRSTRLEN)<<endl;
     cout<<"\t\tDest IP: "<<inet_ntop(AF_INET,(struct in_addr*)IPhead.Dest_Ip,HostIPAddr,INET_ADDRSTRLEN)<<endl;
 
     if(IPhead.Protocol == 1){
-        IP_icmp_HeadFunc(packet_data);
+        IP_icmp_HeadFunc(packet_data,IPhead);
     }
     else if(IPhead.Protocol == 17){
-        UDP_head_Func(packet_data);
+        UDP_head_Func(packet_data, IPhead);
+    }
+    else if(IPhead.Protocol == 6){
+        TCPheadFunc(packet_data, IPhead);
     }
 }
 
@@ -272,7 +320,7 @@ void ARPHeadFunc(const u_char * packet_data){
 
 int main(){
     char errbuf[PCAP_ERRBUF_SIZE];
-    pcap_t * readFile = pcap_open_offline("UDPfile.pcap", errbuf);
+    pcap_t * readFile = pcap_open_offline("smallTCP.pcap", errbuf);
     struct pcap_pkthdr *header;   // Packet header
     const u_char *packet_data;
     int result = 1;
