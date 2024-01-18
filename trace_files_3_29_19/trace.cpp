@@ -75,10 +75,11 @@ struct IP_icmp{
     uint8_t unionfields[4];
 };
 
-struct singleBitStr{
-    u_int16_t vars : 1;
-};
 
+/**
+ * @brief
+ * Struct defined to store the value of the TCP header
+*/
 struct TCPHead{
     u_int16_t sourcePort;
     u_int16_t destPort;
@@ -98,6 +99,20 @@ struct TCPHead{
     u_int16_t window;
     u_int16_t checksum;
     u_int16_t urgentPointer;
+};
+
+
+/**
+ * @brief
+ * This pseudoheader is designed to calculate the
+ * checksum value for the TCP header
+*/
+struct IP_pseudoheader {
+    u_int8_t sourceIP[4];
+    u_int8_t destinationIP[4];
+    u_int8_t reserved;
+    u_int8_t protocol;
+    u_int16_t TCP_len;
 };
 
 
@@ -180,6 +195,15 @@ void UDP_head_Func(const u_char * packet_data, const IPHead IPhead){
 }
 
 
+/**
+ * @brief
+ * function stores and display the data for the TCP header.
+ * It also creates an instance of the IP suedo header to store the
+ * required value in order to perform the checksum.
+ * The check sum value is displayed then if it is correct or incorrect.
+ * 
+ * @param packet_data, IPhead
+*/
 void TCPheadFunc(const u_char * packet_data,const IPHead IPhead){
     TCPHead TCPhead;
     memcpy(&TCPhead,packet_data + sizeof(EthernetHead) + IPhead.HeaderLen*4,sizeof(TCPHead));
@@ -197,7 +221,27 @@ void TCPheadFunc(const u_char * packet_data,const IPHead IPhead){
     TCPhead.fin == 0 ? printf("\t\tFIN Flag: : No\n") : printf("\t\tFIN Flag: : Yes\n");
 
     printf("\t\tWindow Size: %u\n",ntohs(TCPhead.window));
-    printf("\t\tChecksum: (0x%x)\n",ntohs(TCPhead.checksum));
+
+    //calculate the TCP PDU length by taking subtracting the IP header from IP PDU
+    u_int16_t TCP_PDU_len = ntohs(IPhead.IP_PDU_LEN) - (IPhead.HeaderLen*4);
+    // dynamic array to hold the total size of TCP + IP pseudoheader, is used for checksum
+    u_int8_t *TCP_check_sum = new uint8_t[TCP_PDU_len + sizeof(IP_pseudoheader)];
+
+    //fill the pseudoheader with the expected val
+    IP_pseudoheader tempIP;
+    tempIP.reserved = 0;
+    memcpy(tempIP.sourceIP,IPhead.SenderIp,sizeof(u_int32_t));
+    memcpy(tempIP.destinationIP,IPhead.Dest_Ip,sizeof(u_int32_t));
+    tempIP.protocol = IPhead.Protocol;
+    tempIP.TCP_len = htons(TCP_PDU_len);    //note TCP_PDU_len needs to be in network order
+
+    //first get the data from the IP_psudeoHeader
+    memcpy(TCP_check_sum,&tempIP,sizeof(IP_pseudoheader));
+    //then get the data for the TCP header and TCP data-seg
+    memcpy(TCP_check_sum + sizeof(IP_pseudoheader), packet_data + sizeof(EthernetHead) + IPhead.HeaderLen*4, TCP_PDU_len);
+    u_int16_t checkSumAns = in_cksum((u_int16_t *)TCP_check_sum,TCP_PDU_len + sizeof(IP_pseudoheader));
+    checkSumAns == 0 ? printf("\t\tChecksum: Correct (0x%x)\n",ntohs(TCPhead.checksum)) : printf("\t\tChecksum: Incorrect (0x%x)\n",ntohs(TCPhead.checksum));
+    delete[] TCP_check_sum;
     
     cout<<endl;
 }
@@ -320,7 +364,7 @@ void ARPHeadFunc(const u_char * packet_data){
 
 int main(){
     char errbuf[PCAP_ERRBUF_SIZE];
-    pcap_t * readFile = pcap_open_offline("smallTCP.pcap", errbuf);
+    pcap_t * readFile = pcap_open_offline("TCP_bad_checksum.pcap", errbuf);
     struct pcap_pkthdr *header;   // Packet header
     const u_char *packet_data;
     int result = 1;
