@@ -1,7 +1,7 @@
 #include <iostream>
 #include <pcap.h>
 #include <cstring>
-#include <vector>
+// #include <vector>
 #include <netinet/ether.h>
 
 using namespace std;
@@ -368,7 +368,6 @@ int main(){
     struct pcap_pkthdr *header;   // Packet header
     const u_char *packet_data;
     int result = 1;
-    vector<EthernetHead> etherHeadStorage;
     int packetNum = 1;
 
     while(result == 1){

@@ -8,8 +8,11 @@ CFLAGS = -g -Wall
 
 all:  trace
 
-trace: trace.c
-	$(CC) $(CFLAGS) -o trace trace.c checksum.c  -lpcap 
+trace: trace.cpp
+	$(CC) $(CFLAGS) -o trace trace.cpp -lpcap 
+
+trace.o: trace.cpp
+	$(CC) $(CFLAGS) -c trace.cpp
 
 clean:
 	rm -f trace
