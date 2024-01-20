@@ -336,6 +336,10 @@ int main(int argc, char **argv){
     }
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t * readFile = pcap_open_offline(argv[1], errbuf);
+    if(readFile == NULL){
+        printf("Error: %s\n",errbuf);
+        return -1;
+    }
     struct pcap_pkthdr *header;   // Packet header
     const u_char *packet_data;
     int result = 1;
