@@ -2,6 +2,8 @@
 #include <pcap.h>
 #include <cstring>
 #include <netinet/ether.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 extern "C" {
     #include "checksum.h"
 }
