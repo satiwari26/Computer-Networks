@@ -11,7 +11,6 @@ int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData){
     memcpy(pduData + sizeof(uint16_t), dataBuffer, lengthOfData);   //add the data in the pdu-buffer
 
     int bytesSend = safeSend(clientSocket, pduData, pduLength, 0);  //safe send sent from the 
-    printf("we are here!\n");
 
     return bytesSend;
 }

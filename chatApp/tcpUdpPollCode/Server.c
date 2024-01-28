@@ -24,6 +24,7 @@
 #include "networks.h"
 #include "safeUtil.h"
 #include "recvPDU.h"
+#include "pollLib.h"
 
 #define MAXBUF 1024
 #define DEBUG_FLAG 1
@@ -31,10 +32,56 @@
 void recvFromClient(int clientSocket);
 int checkArgs(int argc, char *argv[]);
 
+
+/**
+ * @brief
+ * process the client's message that is sent to the server
+ * @param clientSocket
+*/
+void processClient(int clientSocket){
+	uint8_t dataBuffer[MAXBUF];
+	int messageLen = 0;
+	
+	//now get the data from the client_socket
+	if ((messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF)) < 0)
+	{
+		perror("recv call");
+		exit(-1);
+	}
+
+	if (messageLen > 0)
+	{
+		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", clientSocket, messageLen, dataBuffer);
+	}
+	else
+	{
+		printf("Connection closed by other side\n");
+		//remove the client from the socket-set
+		removeFromPollSet(clientSocket);
+	}
+}
+
+void addNewSocket(int mainServerSocket, int clientSocket){
+	// wait for client to connect
+	clientSocket = tcpAccept(mainServerSocket, DEBUG_FLAG);
+	addToPollSet(clientSocket);
+}
+
+void serverControl(int mainServerSocket, int clientSocket){
+	int pollVal = pollCall(-1);
+	if(pollVal == mainServerSocket){	//new client is trying to connect
+		addNewSocket(mainServerSocket, clientSocket);
+	}
+	else if(pollVal > 0){	//client is trying to send a message to the server
+		processClient(pollVal);
+	}
+}
+
 int main(int argc, char *argv[])
 {
-	int mainServerSocket = 0;   //socket descriptor for the server socket
+
 	int clientSocket = 0;   //socket descriptor for the client socket
+	int mainServerSocket = 0;   //socket descriptor for the server socket
 	int portNumber = 0;
 	
 	portNumber = checkArgs(argc, argv);
@@ -42,10 +89,16 @@ int main(int argc, char *argv[])
 	//create the server socket
 	mainServerSocket = tcpServerSetup(portNumber);
 
-	// wait for client to connect
-	clientSocket = tcpAccept(mainServerSocket, DEBUG_FLAG);
+	//setup the poll for the sockets
+	setupPollSet();
+	//adding the main server socket to the pollset:
+	addToPollSet(mainServerSocket);
 
-	recvFromClient(clientSocket);
+	while(1){
+		serverControl(mainServerSocket,clientSocket);
+	}
+
+	// recvFromClient(clientSocket);
 	
 	/* close the sockets */
 	close(clientSocket);
