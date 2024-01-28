@@ -1,7 +1,5 @@
 # Trace Files
 
-- cd trace_files_3_29_19
-
 ## Name, Lab Section:
 Name: Saumitra Tiwari
 Lab Section: After-Noon, 3pm
