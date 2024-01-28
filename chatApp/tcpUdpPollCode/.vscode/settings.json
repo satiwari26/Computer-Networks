@@ -1,0 +1,20 @@
+{
+    "files.associations": {
+        "recvpdu.h": "c",
+        "sendpdu.h": "c",
+        "safeutil.h": "c",
+        "stdlib.h": "c",
+        "uio.h": "c",
+        "stat.h": "c",
+        "types.h": "c",
+        "stdio.h": "c",
+        "time.h": "c",
+        "strings.h": "c",
+        "fcntl.h": "c",
+        "string.h": "c",
+        "socket.h": "c",
+        "in.h": "c",
+        "netdb.h": "c",
+        "stddef.h": "c"
+    }
+}
