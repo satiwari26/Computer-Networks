@@ -56,6 +56,8 @@ void processClient(int clientSocket){
 	else
 	{
 		printf("Connection closed by other side\n");
+		//close the socket connection b/w client and server
+		close(clientSocket);
 		//remove the client from the socket-set
 		removeFromPollSet(clientSocket);
 	}
