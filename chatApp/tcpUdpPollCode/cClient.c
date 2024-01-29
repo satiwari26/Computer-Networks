@@ -97,8 +97,6 @@ void processMsgFromServer(int serverSocket){
 */
 void clientControl(int socketNum){
 	int pollVal = pollCall(-1);
-	printf("Enter data: ");
-	fflush(stdout);
 	if(pollVal == STDIN_FILENO){
 		processStdin(socketNum);
 	}
@@ -124,6 +122,9 @@ int main(int argc, char * argv[])
 	addToPollSet(socketNum);
 
 	while(1){
+		fflush(stdout);
+		printf("Enter data: ");
+		fflush(stdout);
 		clientControl(socketNum);
 	}
 	

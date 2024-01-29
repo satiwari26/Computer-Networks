@@ -63,6 +63,11 @@ void processClient(int clientSocket){
 	}
 }
 
+/**
+ * @brief
+ * to add new socket to pollset
+ * @param mainServerSocket clientSocket
+*/
 void addNewSocket(int mainServerSocket, int clientSocket){
 	// wait for client to connect
 	clientSocket = tcpAccept(mainServerSocket, DEBUG_FLAG);
