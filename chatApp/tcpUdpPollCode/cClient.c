@@ -109,33 +109,20 @@ void processStdin(int socketNum, char * argv[]){
 	char destHandleName[MAX_HANDLE_SIZE];
 	sscanf((char *)sendBuf, "%s %s",messageCommands,destHandleName);
 	
+	//
 	if(strcmp(messageCommands, "%M") == 0 || strcmp(messageCommands, "%m") == 0){	//sending individual message
 		singleDesHeader->destHandelLen = strlen(destHandleName);	//destination handel name length
-		// char destHandleNameData[strlen(destHandleName)];	//create dynamic handelName
-		// strcpy(destHandleNameData,destHandleName);
-		// memcpy(destHandleNameData,destHandleName,strlen(destHandleName));	//copy the handel name
-		// singleDesHeader->destHandelName = (uint8_t *)destHandleNameData;	//point to the new allocated memory
 
 		singleDesHeader->destinationHandels = 1;	//hard set to one in single message sending
 	}
 
-
-
-
-
-
-
 	printf("Message Command: %s\n",messageCommands);
-
 	singleDesHeader->senderHandelLen = sendHandelLen;
 	singleDesHeader->senderHandelName = (uint8_t *)sendHandleName;
-
-
-
-
 	//package length containing the header info + dynamic message length
 	int packagesLength = sizeof(uint8_t) + sendHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + singleDesHeader->destHandelLen;
 
+	//dynamically sending the direct message to the user
 	if(strcmp(messageCommands, "%M") == 0 || strcmp(messageCommands, "%m") == 0){	//sending individual message
 		//subtracting the destination header + command bytes from the total user length
 		int sendermessageLength = sendLen - (singleDesHeader->destHandelLen + 3) -1;
@@ -151,9 +138,13 @@ void processStdin(int socketNum, char * argv[]){
 				memcpy(packageBuff + sizeof(uint8_t), singleDesHeader->senderHandelName, singleDesHeader->senderHandelLen);
 				memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen, &singleDesHeader->destinationHandels, sizeof(uint8_t));
 				memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t), &singleDesHeader->destHandelLen, sizeof(uint8_t));
-				memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t), singleDesHeader->destHandelName, singleDesHeader->destHandelLen);
+				memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t), destHandleName, singleDesHeader->destHandelLen);
 				memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + singleDesHeader->destHandelLen, messageBuff, chunkSize);
+				//null terminating the last char of the package buffer(message buffer)
+				*(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + singleDesHeader->destHandelLen + chunkSize) = '\0';
+
 				sent =  sendPDU(socketNum, INDIVIDUAL_PACKET_FLAG, packageBuff, packagesLength);
+				packagesLength -= chunkSize;	
 				if (sent < 0)
 				{
 					perror("send call");
@@ -170,7 +161,7 @@ void processStdin(int socketNum, char * argv[]){
 			memcpy(packageBuff + sizeof(uint8_t), singleDesHeader->senderHandelName, singleDesHeader->senderHandelLen);
 			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen, &singleDesHeader->destinationHandels, sizeof(uint8_t));
 			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t), &singleDesHeader->destHandelLen, sizeof(uint8_t));
-			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t), singleDesHeader->destHandelName, singleDesHeader->destHandelLen);
+			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t), destHandleName, singleDesHeader->destHandelLen);
 			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + singleDesHeader->destHandelLen, messageBuff, sizeof(uint8_t));
 			sent =  sendPDU(socketNum, INDIVIDUAL_PACKET_FLAG, packageBuff, packagesLength);
 			if (sent < 0)
@@ -216,6 +207,7 @@ void parseDataFromServer(uint8_t * dataBuffer, int messageLen){
 	int messageDataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen - 2*sizeof(uint8_t) - directMessageHead->destHandelLen;
 	uint8_t messageData[messageDataLen];
 	memcpy(messageData, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + directMessageHead->destHandelLen, messageDataLen);
+	messageData[messageDataLen] = '\0';	//add the null termination before printing the data
 	printf("\n%s: %s\n",senderHandelName, messageData);
 }
 
@@ -236,13 +228,12 @@ void processMsgFromServer(int serverSocket){
 		exit(-1);
 	}
 
-	if(flag == GOOD_HANDEL_FLAG){
-		parseDataFromServer(dataBuffer, messageLen);
-	}
-
 	if (messageLen > 0)
 	{
-		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", serverSocket, messageLen, dataBuffer);
+		// printf("Message received on socket: %u, Message Length: %d, Data: %s\n", serverSocket, messageLen, dataBuffer);
+		if(flag == GOOD_HANDEL_FLAG){
+			parseDataFromServer(dataBuffer, messageLen);
+		}
 	}
 	else
 	{
@@ -363,25 +354,6 @@ int main(int argc, char * argv[])
 	
 	return 0;
 }
-
-// void sendToServer(int socketNum)
-// {
-// 	uint8_t sendBuf[MAXBUF];   //data buffer
-// 	int sendLen = 0;        //amount of data to send
-// 	int sent = 0;            //actual amount of data sent/* get the data and send it   */
-	
-// 	sendLen = readFromStdin(sendBuf);
-// 	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
-	
-// 	sent =  sendPDU(socketNum, sendBuf, sendLen);
-// 	if (sent < 0)
-// 	{
-// 		perror("send call");
-// 		exit(-1);
-// 	}
-
-// 	printf("Amount of data sent is: %d\n", sent);
-// }
 
 int readFromStdin(uint8_t * buffer)
 {
