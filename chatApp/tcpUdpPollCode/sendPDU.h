@@ -15,4 +15,4 @@
 #include <errno.h>
 #include <stddef.h>
 
-int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData);
+int sendPDU(int clientSocket, uint8_t flag, uint8_t * dataBuffer, int lengthOfData);

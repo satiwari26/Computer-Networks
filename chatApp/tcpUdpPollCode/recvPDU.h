@@ -15,4 +15,4 @@
 #include <errno.h>
 #include <stddef.h>
 
-int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize);
+int recvPDU(int socketNumber, uint8_t * flag , uint8_t * dataBuffer, int bufferSize);

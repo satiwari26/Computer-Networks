@@ -1,9 +1,16 @@
 #include "recvPDU.h"
 
-int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
+int recvPDU(int socketNumber, uint8_t * flag , uint8_t * dataBuffer, int bufferSize){
     int bytesReceived = safeRecv(socketNumber, dataBuffer, sizeof(uint16_t), MSG_WAITALL);
 
+
     if(bytesReceived < 0 || bytesReceived == 0){    //if failed to received the pdu length
+        return bytesReceived;
+    }
+
+    bytesReceived = safeRecv(socketNumber, flag, sizeof(uint8_t), MSG_WAITALL);
+    if(bytesReceived < 0){
+        printf("Flag data is corrupted\n");
         return bytesReceived;
     }
 
@@ -16,7 +23,10 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
         return -1;
     }
 
-    bytesReceived = safeRecv(socketNumber, dataBuffer, pudLength_HO - sizeof(uint16_t), MSG_WAITALL);
-
+    int remainingdataFromPDU = (pudLength_HO - sizeof(uint16_t) - sizeof(uint8_t));
+    if(remainingdataFromPDU != 0){
+        bytesReceived = safeRecv(socketNumber, dataBuffer, remainingdataFromPDU, MSG_WAITALL);
+    }
+    
     return bytesReceived;
 }

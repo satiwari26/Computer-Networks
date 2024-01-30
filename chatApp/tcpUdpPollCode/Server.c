@@ -24,14 +24,66 @@
 #include "networks.h"
 #include "safeUtil.h"
 #include "recvPDU.h"
+#include "sendPDU.h"
 #include "pollLib.h"
+#include "handleStruct.h"
 
 #define MAXBUF 1024
 #define DEBUG_FLAG 1
+#define GOOD_HANDEL_FLAG 2
+#define INIT_PACK_ERROR 3
 
-void recvFromClient(int clientSocket);
+// void recvFromClient(int clientSocket);
 int checkArgs(int argc, char *argv[]);
 
+void printString(char * dataBuff, int sizeOfBuff){
+	for(int i=0;i<sizeOfBuff;i++){
+		printf("%c",dataBuff[i]);
+	}
+	printf("\n");
+}	
+
+/**
+ * @brief
+ * confirms the handleName by checking in the handelSet
+ * @param clientSocket
+ * @param dataBuffer
+*/
+void confirmHandelName(int clientSocket, uint8_t * dataBuffer){
+	//get the size of the data buffer
+	uint8_t sizeOfHandel = dataBuffer[0];
+	//store the data in the handelName
+	char handelNameProvided[sizeOfHandel];
+	memcpy(handelNameProvided,dataBuffer + sizeof(uint8_t), sizeOfHandel);
+	printString(handelNameProvided,sizeOfHandel);
+	
+	//look for the handel name and send the ack
+	int handelSocketCheck;
+	handelSocketCheck = getSocketNumber(handelNameProvided, sizeOfHandel);
+	if(handelSocketCheck == -1){
+		printf("can't find the handel in the list\n");
+		addNewHandle(handelNameProvided,clientSocket,sizeOfHandel);
+		int sendingFlag = sendPDU(clientSocket, GOOD_HANDEL_FLAG, (uint8_t *)handelNameProvided, 0);
+		if (sendingFlag < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
+	}
+	else{
+		printf("the handel already exist please try something else\n");
+		int sendingFlag = sendPDU(clientSocket, INIT_PACK_ERROR, (uint8_t *)handelNameProvided, 0);
+		if (sendingFlag < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
+		//close the socket connection b/w client and server
+		close(clientSocket);
+		//remove the client from the socket-set
+		removeFromPollSet(clientSocket);
+	}
+}
 
 /**
  * @brief
@@ -41,12 +93,19 @@ int checkArgs(int argc, char *argv[]);
 void processClient(int clientSocket){
 	uint8_t dataBuffer[MAXBUF];
 	int messageLen = 0;
+
+	uint8_t flag = 0;	//processing the flags send from the client
 	
 	//now get the data from the client_socket
-	if ((messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF)) < 0)
+	if ((messageLen = recvPDU(clientSocket, &flag,  dataBuffer, MAXBUF)) < 0)
 	{
 		perror("recv call");
 		exit(-1);
+	}
+
+	/**performs the login for the client*/
+	if(flag == 1 && messageLen > 0){
+		confirmHandelName(clientSocket, dataBuffer);
 	}
 
 	if (messageLen > 0)
@@ -104,38 +163,31 @@ int main(int argc, char *argv[])
 	while(1){
 		serverControl(mainServerSocket,clientSocket);
 	}
-
-	// recvFromClient(clientSocket);
-	
-	/* close the sockets */
-	close(clientSocket);
-	close(mainServerSocket);
-
 	
 	return 0;
 }
 
-void recvFromClient(int clientSocket)
-{
-	uint8_t dataBuffer[MAXBUF];
-	int messageLen = 0;
+// void recvFromClient(int clientSocket)
+// {
+// 	uint8_t dataBuffer[MAXBUF];
+// 	int messageLen = 0;
 	
-	//now get the data from the client_socket
-	if ((messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF)) < 0)
-	{
-		perror("recv call");
-		exit(-1);
-	}
+// 	//now get the data from the client_socket
+// 	if ((messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF)) < 0)
+// 	{
+// 		perror("recv call");
+// 		exit(-1);
+// 	}
 
-	if (messageLen > 0)
-	{
-		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", clientSocket, messageLen, dataBuffer);
-	}
-	else
-	{
-		printf("Connection closed by other side\n");
-	}
-}
+// 	if (messageLen > 0)
+// 	{
+// 		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", clientSocket, messageLen, dataBuffer);
+// 	}
+// 	else
+// 	{
+// 		printf("Connection closed by other side\n");
+// 	}
+// }
 
 int checkArgs(int argc, char *argv[])
 {

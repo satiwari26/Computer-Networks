@@ -6,6 +6,7 @@
 */
 struct handleTable{
     char * handleName;
+    int handelLen;
     int socket_number;
     struct handleTable * next;
 };
@@ -19,19 +20,54 @@ struct handleTable * handleHeader = NULL;
 
 /**
  * @brief
+ * to perform the comparison between the existing handel and provided handel
+ * 
+*/
+int cmpHandel(struct handleTable * table, char * handleN, uint8_t handelL){
+    if(table->handelLen != handelL){
+        return -1;
+    }
+    printf("%s",table->handleName);
+    char existing[table->handelLen + 1];
+    char newString[handelL + 1];
+    memcpy(existing,table->handleName,table->handelLen);
+    existing[table->handelLen] = '\0';
+
+    memcpy(newString,handleN,handelL);
+    newString[handelL] = '\0';
+
+    // Print or debug to verify the content of the strings
+    printf("Existing: %s\n", existing);
+    printf("New String: %s\n", newString);
+
+    if(strncmp(existing,newString, handelL) == 0){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+
+/**
+ * @brief
  * add new handle to the table
  * @param handleName    //need to ensure that handleName is store 
  *                      in an array somewhere before passed
  * @param sockeNumber
 */
-void addNewHandle(char * handleName, int sockeNumber){
+void addNewHandle(char * handleName, int sockeNumber, uint8_t handelLen){
+    char *handelArray = malloc(handelLen + 1);
+    memcpy(handelArray,handleName,handelLen);
+    handelArray[handelLen] = '\0';
+
     struct handleTable * table = (struct handleTable *)malloc(sizeof(struct handleTable));
     if (table == NULL) {
         fprintf(stderr, "Memory allocation failed\n");
         return;
     }
-    table->handleName = handleName;
+    table->handleName = handelArray;
     table->socket_number = sockeNumber;
+    table->handelLen = handelLen;
     table->next = NULL;
 
     if(handleHeader == NULL){   //if there are no nodes add the first node
@@ -53,7 +89,7 @@ void addNewHandle(char * handleName, int sockeNumber){
  * removes the handle element from the list
  * @param handleName (for the comparison of the file)
 */
-void removeHandle(char * handleName){
+void removeHandle(char * handleName, uint8_t handelLen){
     bool existHandle = false;
     if(handleHeader == NULL){
         printf("Error there are no clients on the handle");
@@ -62,7 +98,7 @@ void removeHandle(char * handleName){
     struct handleTable * curr = handleHeader;
     struct handleTable * prev = curr;
     do{
-        if(strcmp(curr->handleName,handleName) == 0){   //if the two string is same
+        if(cmpHandel(curr,handleName, handelLen) == 0){   //if the two string is same
             if(curr == handleHeader){   //if the curr pointer is header move header to next
                 handleHeader = curr->next;
                 free(curr); //remove the current node from the link
@@ -89,14 +125,15 @@ void removeHandle(char * handleName){
  * if handleName doesn't exist returns -1
  * @param handleName
 */
-int getSocketNumber(char * handleName){
+int getSocketNumber(char * handleName, uint8_t handelLen){
     struct handleTable * curr = handleHeader;
     if(curr == NULL){
         return -1;
     }
 
     while(curr != NULL){
-        if(strcmp(curr->handleName,handleName) == 0){
+        printf("%s\n",curr->handleName);
+        if(cmpHandel(curr,handleName, handelLen) == 0){
             return curr->socket_number;
         }
         curr = curr->next;

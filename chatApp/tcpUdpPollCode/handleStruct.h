@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 /**
  * @brief
@@ -13,14 +14,14 @@
  *                      in an array somewhere before passed
  * @param sockeNumber
 */
-void addNewHandle(char * handleName, int sockeNumber);
+void addNewHandle(char * handleName, int sockeNumber, uint8_t handelLen);
 
 /**
  * @brief
  * removes the handle element from the list
  * @param handleName (for the comparison of the file)
 */
-void removeHandle(char * handleName);
+void removeHandle(char * handleName, uint8_t handelLen);
 
 /**
  * @brief
@@ -28,7 +29,7 @@ void removeHandle(char * handleName);
  * if handleName doesn't exist returns -1
  * @param handleName
 */
-int getSocketNumber(char * handleName);
+int getSocketNumber(char * handleName, uint8_t handelLen);
 
 /**
  * @brief
