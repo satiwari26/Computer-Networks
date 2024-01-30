@@ -33,6 +33,7 @@
 #define CLIENT_INIT_FLAG 1
 #define MAX_MESSAGE_LENGTH 200
 #define INDIVIDUAL_PACKET_FLAG 5
+#define GOOD_HANDEL_FLAG 2
 
 
 void sendToServer(int socketNum);
@@ -201,36 +202,58 @@ void processStdin(int socketNum, char * argv[]){
 	}
 }
 
+void parseDataFromServer(uint8_t * dataBuffer, int messageLen){
+	struct SingleDestiHeader * directMessageHead = (struct SingleDestiHeader *)malloc(sizeof(struct SingleDestiHeader));
+	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
+	uint8_t senderHandelName[directMessageHead->senderHandelLen + 1];
+	senderHandelName[directMessageHead->senderHandelLen] = '\0';
+	memcpy(senderHandelName,dataBuffer + sizeof(uint8_t), directMessageHead->senderHandelLen);
+	memcpy(&directMessageHead->destinationHandels, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen, sizeof(uint8_t));
+	memcpy(&directMessageHead->destHandelLen, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t), sizeof(uint8_t));
+	uint8_t destinationHandelName[directMessageHead->destHandelLen];
+	memcpy(destinationHandelName,dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t),directMessageHead->destHandelLen);
+	
+	int messageDataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen - 2*sizeof(uint8_t) - directMessageHead->destHandelLen;
+	uint8_t messageData[messageDataLen];
+	memcpy(messageData, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + directMessageHead->destHandelLen, messageDataLen);
+	printf("\n%s: %s\n",senderHandelName, messageData);
+}
+
 /**
  * @brief processes the messgage from the server.
  * Also close the connection if the server has ended the program
  * @param
  * takes in the serverSocket to receive the message or change the message
 */
-// void processMsgFromServer(int serverSocket){
-// 	uint8_t dataBuffer[MAXBUF];
-// 	int messageLen = 0;
-// 	//now get the data from the client_socket
-// 	if ((messageLen = recvPDU(serverSocket, dataBuffer, MAXBUF)) < 0)
-// 	{
-// 		perror("recv call");
-// 		exit(-1);
-// 	}
+void processMsgFromServer(int serverSocket){
+	uint8_t flag;
+	uint8_t dataBuffer[MAXBUF];
+	int messageLen = 0;
+	//now get the data from the client_socket
+	if ((messageLen = recvPDU(serverSocket, &flag ,dataBuffer, MAXBUF)) < 0)
+	{
+		perror("recv call");
+		exit(-1);
+	}
 
-// 	if (messageLen > 0)
-// 	{
-// 		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", serverSocket, messageLen, dataBuffer);
-// 	}
-// 	else
-// 	{
-// 		printf("Connection closed by the server\n");
-// 		//close the socket connection b/w client and server
-// 		close(serverSocket);
-// 		//remove the client from the socket-set
-// 		removeFromPollSet(serverSocket);
-// 		exit(0);
-// 	}
-// }
+	if(flag == GOOD_HANDEL_FLAG){
+		parseDataFromServer(dataBuffer, messageLen);
+	}
+
+	if (messageLen > 0)
+	{
+		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", serverSocket, messageLen, dataBuffer);
+	}
+	else
+	{
+		printf("Connection closed by the server\n");
+		//close the socket connection b/w client and server
+		close(serverSocket);
+		//remove the client from the socket-set
+		removeFromPollSet(serverSocket);
+		exit(0);
+	}
+}
 
 /**
  * @brief
@@ -244,7 +267,7 @@ void clientControl(int socketNum, char * argv[]){
 		processStdin(socketNum, argv);
 	}
 	else if(pollVal > 0){
-		// processMsgFromServer(pollVal);
+		processMsgFromServer(pollVal);
 	}
 }
 

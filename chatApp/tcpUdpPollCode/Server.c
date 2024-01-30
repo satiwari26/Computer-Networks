@@ -82,6 +82,12 @@ void DirectMessage(uint8_t * dataBuffer, int messageLen){
 	}
 	else{
 		printf("Destination handel Port: %d",destinationSocketNum);
+		int forwardDirectMessage = sendPDU(destinationSocketNum, GOOD_HANDEL_FLAG, (uint8_t *)dataBuffer, messageLen);
+		if (forwardDirectMessage < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
 	}
 
 }
