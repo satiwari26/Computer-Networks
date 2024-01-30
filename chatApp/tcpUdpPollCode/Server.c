@@ -34,6 +34,8 @@
 #define INIT_PACK_ERROR 3
 #define INDIVIDUAL_PACKET_FLAG 5
 #define CLIENT_INIT_FLAG 1
+#define MULTI_CAST_FLAG 6
+#define MAX_HANDLE_SIZE 100
 
 /**
  * @brief
@@ -61,7 +63,46 @@ void printString(char * dataBuff, int sizeOfBuff){
  * @brief
  * parsing the direct message flag information
 */
+void MultimodeMessage(uint8_t * dataBuffer, int messageLen){
+	struct SingleDestiHeader * directMessageHead = (struct SingleDestiHeader *)malloc(sizeof(struct SingleDestiHeader));
+	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
+	uint8_t senderHandelName[directMessageHead->senderHandelLen];
+	memcpy(senderHandelName,dataBuffer + sizeof(uint8_t), directMessageHead->senderHandelLen);
+	memcpy(&directMessageHead->destinationHandels, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen, sizeof(uint8_t));
 
+	//to store the length of each handles and handle names
+	char destHandleName1[9][MAX_HANDLE_SIZE];
+	uint8_t destHandleNameLenghts1[9];
+
+	int valueOffset = sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t);
+	for(int i=0; i<directMessageHead->destinationHandels;i++){
+		memcpy(&destHandleNameLenghts1[i], dataBuffer + valueOffset, sizeof(uint8_t));	//grab the lenght of handel
+		valueOffset = valueOffset + sizeof(uint8_t);
+		memcpy(destHandleName1[i], dataBuffer + valueOffset, destHandleNameLenghts1[i]);
+		valueOffset += destHandleNameLenghts1[i];
+	}
+
+
+	// memcpy(&directMessageHead->destHandelLen, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t), sizeof(uint8_t));
+	// uint8_t destinationHandelName[directMessageHead->destHandelLen];
+	// memcpy(destinationHandelName,dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t),directMessageHead->destHandelLen);
+	
+	int messageDataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen - sizeof(uint8_t);
+	//subtract the handel length and handel size from the messageLen
+	for(int i=0;i<directMessageHead->destinationHandels;i++){
+		messageDataLen -= (sizeof(uint8_t) + destHandleNameLenghts1[i]);
+	}
+
+	uint8_t messageData[messageDataLen];
+	memcpy(messageData, dataBuffer + valueOffset, messageDataLen);
+	printf("%s",messageData);
+	fflush(stdout);
+}
+
+/**
+ * @brief
+ * parsing the direct message flag information
+*/
 void DirectMessage(uint8_t * dataBuffer, int messageLen){
 	struct SingleDestiHeader * directMessageHead = (struct SingleDestiHeader *)malloc(sizeof(struct SingleDestiHeader));
 	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
@@ -158,6 +199,9 @@ void processClient(int clientSocket){
 	}
 	else if(flag == INDIVIDUAL_PACKET_FLAG && messageLen > 0){
 		DirectMessage(dataBuffer, messageLen);
+	}
+	else if(flag == MULTI_CAST_FLAG && messageLen > 0){
+		MultimodeMessage(dataBuffer, messageLen);
 	}
 
 	if (messageLen > 0)
