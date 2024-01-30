@@ -32,6 +32,20 @@
 #define DEBUG_FLAG 1
 #define GOOD_HANDEL_FLAG 2
 #define INIT_PACK_ERROR 3
+#define INDIVIDUAL_PACKET_FLAG 5
+#define CLIENT_INIT_FLAG 1
+
+/**
+ * @brief
+ * struct for direct Message(individual message)
+*/
+struct SingleDestiHeader{
+	uint8_t senderHandelLen;
+	uint8_t * senderHandelName;
+	uint8_t destinationHandels;
+	uint8_t destHandelLen;
+	uint8_t * destHandelName;
+};
 
 // void recvFromClient(int clientSocket);
 int checkArgs(int argc, char *argv[]);
@@ -41,7 +55,36 @@ void printString(char * dataBuff, int sizeOfBuff){
 		printf("%c",dataBuff[i]);
 	}
 	printf("\n");
-}	
+}
+
+/**
+ * @brief
+ * parsing the direct message flag information
+*/
+
+void DirectMessage(uint8_t * dataBuffer, int messageLen){
+	struct SingleDestiHeader * directMessageHead = (struct SingleDestiHeader *)malloc(sizeof(struct SingleDestiHeader));
+	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
+	uint8_t senderHandelName[directMessageHead->senderHandelLen];
+	memcpy(senderHandelName,dataBuffer + sizeof(uint8_t), directMessageHead->senderHandelLen);
+	memcpy(&directMessageHead->destinationHandels, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen, sizeof(uint8_t));
+	memcpy(&directMessageHead->destHandelLen, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t), sizeof(uint8_t));
+	uint8_t destinationHandelName[directMessageHead->destHandelLen];
+	memcpy(destinationHandelName,dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t),directMessageHead->destHandelLen);
+	
+	int messageDataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen - 2*sizeof(uint8_t) - directMessageHead->destHandelLen;
+	uint8_t messageData[messageDataLen];
+	memcpy(messageData, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + directMessageHead->destHandelLen, messageDataLen);
+
+	int destinationSocketNum = getSocketNumber((char *)destinationHandelName, directMessageHead->destHandelLen);
+	if(destinationSocketNum == -1){
+		printf("The handel doesn't exist.");
+	}
+	else{
+		printf("Destination handel Port: %d",destinationSocketNum);
+	}
+
+}
 
 /**
  * @brief
@@ -104,8 +147,11 @@ void processClient(int clientSocket){
 	}
 
 	/**performs the login for the client*/
-	if(flag == 1 && messageLen > 0){
+	if(flag == CLIENT_INIT_FLAG && messageLen > 0){
 		confirmHandelName(clientSocket, dataBuffer);
+	}
+	else if(flag == INDIVIDUAL_PACKET_FLAG && messageLen > 0){
+		DirectMessage(dataBuffer, messageLen);
 	}
 
 	if (messageLen > 0)

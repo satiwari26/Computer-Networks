@@ -90,6 +90,10 @@ void addNewHandle(char * handleName, int sockeNumber, uint8_t handelLen){
  * @param handleName (for the comparison of the file)
 */
 void removeHandle(char * handleName, uint8_t handelLen){
+    char *handelArray = malloc(handelLen + 1);
+    memcpy(handelArray,handleName,handelLen);
+    handelArray[handelLen] = '\0';
+
     bool existHandle = false;
     if(handleHeader == NULL){
         printf("Error there are no clients on the handle");
@@ -98,7 +102,7 @@ void removeHandle(char * handleName, uint8_t handelLen){
     struct handleTable * curr = handleHeader;
     struct handleTable * prev = curr;
     do{
-        if(cmpHandel(curr,handleName, handelLen) == 0){   //if the two string is same
+        if(cmpHandel(curr,handelArray, handelLen) == 0){   //if the two string is same
             if(curr == handleHeader){   //if the curr pointer is header move header to next
                 handleHeader = curr->next;
                 free(curr); //remove the current node from the link
@@ -126,6 +130,10 @@ void removeHandle(char * handleName, uint8_t handelLen){
  * @param handleName
 */
 int getSocketNumber(char * handleName, uint8_t handelLen){
+    char *handelArray = malloc(handelLen + 1);
+    memcpy(handelArray,handleName,handelLen);
+    handelArray[handelLen] = '\0';
+
     struct handleTable * curr = handleHeader;
     if(curr == NULL){
         return -1;
@@ -133,7 +141,7 @@ int getSocketNumber(char * handleName, uint8_t handelLen){
 
     while(curr != NULL){
         printf("%s\n",curr->handleName);
-        if(cmpHandel(curr,handleName, handelLen) == 0){
+        if(cmpHandel(curr,handelArray, handelLen) == 0){
             return curr->socket_number;
         }
         curr = curr->next;
