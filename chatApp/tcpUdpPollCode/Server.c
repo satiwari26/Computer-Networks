@@ -95,8 +95,16 @@ void MultimodeMessage(uint8_t * dataBuffer, int messageLen){
 
 	uint8_t messageData[messageDataLen];
 	memcpy(messageData, dataBuffer + valueOffset, messageDataLen);
-	printf("%s",messageData);
-	fflush(stdout);
+
+	//finding if the handles exist in the handel set:
+	bool handleExist = true;
+	for(int i=0;i<directMessageHead->destinationHandels;i++){
+		int SocketNumber = getSocketNumber(destHandleName1[i],destHandleNameLenghts1[i]);
+		if(SocketNumber == -1){
+			handleExist = false;
+			break;
+		}
+	}
 }
 
 /**

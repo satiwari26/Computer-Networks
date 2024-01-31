@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/home/chero/Networks/chatApp/tcpUdpPollCode/cClient",
-            "args": ["Dhruv2", "localhost", "11112"],
+            "args": ["Dhruv2", "localhost", "11111"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

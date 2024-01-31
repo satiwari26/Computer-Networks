@@ -151,8 +151,8 @@ void processStdin(int socketNum, char * argv[]){
 		//subtracting the destination header + command bytes from the total user length
 		int sendermessageLength = sendLen - (singleDesHeader->destHandelLen + 3) -1;
 		if(sendermessageLength > MAX_MESSAGE_LENGTH-1){
-			for (int i = (singleDesHeader->destHandelLen + 3 + 1); i < sendLen; i += MAX_MESSAGE_LENGTH - 1) {
-				int chunkSize = min(sendermessageLength - i, MAX_MESSAGE_LENGTH - 1);
+			for (int i = (singleDesHeader->destHandelLen + 3 + 1); i < sendLen; i += min(sendLen - i, MAX_MESSAGE_LENGTH - 1)) {
+				int chunkSize = min(sendLen - i, MAX_MESSAGE_LENGTH - 1);
 				memcpy(messageBuff, sendBuf + i, chunkSize);
 				messageBuff[chunkSize] = '\0';
 				packagesLength += chunkSize;	//dynamic packageLength
@@ -234,8 +234,8 @@ void processStdin(int socketNum, char * argv[]){
 				valAdvance += destHandleNameLenghts1[t] + 1;	//1 for each space
 			}
 
-			for (int i = (valAdvance + 5); i < sendLen; i += MAX_MESSAGE_LENGTH - 1) {
-				int chunkSize = min(sendermessageLength - i, MAX_MESSAGE_LENGTH - 1);
+			for (int i = (valAdvance + 5); i < sendLen; i += min(sendLen - i, MAX_MESSAGE_LENGTH - 1)) {
+				int chunkSize = min(sendLen - i, MAX_MESSAGE_LENGTH - 1);
 				memcpy(messageBuff, sendBuf + i, chunkSize);
 				messageBuff[chunkSize] = '\0';
 				packagesLength += chunkSize;	//dynamic packageLength
