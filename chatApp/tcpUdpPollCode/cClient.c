@@ -35,6 +35,7 @@
 #define INDIVIDUAL_PACKET_FLAG 5
 #define GOOD_HANDEL_FLAG 2
 #define MULTI_CAST_FLAG 6
+#define ERROR_MESSAGE_FLAG 7
 
 
 void sendToServer(int socketNum);
@@ -55,24 +56,6 @@ struct MultiSingleDestiHeader{
 
 int min(int x, int y) {
     return (x < y) ? x : y;
-}
-
-void parseUserInfo(uint8_t * sendBuf, char * messageCommands, struct MultiSingleDestiHeader * singleDesHeader){
-	//parsing the commands
-	memcpy(messageCommands, sendBuf, sizeof(uint8_t));	//copy the first two chars
-	memcpy(messageCommands + sizeof(uint8_t), sendBuf + sizeof(uint8_t), sizeof(uint8_t));
-
-	char destHandleName[MAX_HANDLE_SIZE];
-	sscanf((char *)sendBuf, "%s %s",messageCommands,destHandleName);
-	
-	if(strcmp(messageCommands, "%M") == 0 || strcmp(messageCommands, "%m") == 0){	//sending individual message
-		singleDesHeader->destHandelLen = strlen(destHandleName);	//destination handel name length
-		char destHandleNameData[strlen(destHandleName)];	//create dynamic handelName
-		memcpy(destHandleNameData,destHandleName,strlen(destHandleName));	//copy the handel name
-		singleDesHeader->destHandelName = (uint8_t *)destHandleNameData;	//point to the new allocated memory
-
-		singleDesHeader->destinationHandels = 1;	//hard set to one in single message sending
-	}
 }
 
 /**
@@ -100,9 +83,7 @@ void processStdin(int socketNum, char * argv[]){
 	sendLen = readFromStdin(sendBuf);
 	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
 
-
 	//perform the parsing of the data from the user input
-	// parseUserInfo(sendBuf, messageCommands, singleDesHeader);
 	//parsing the commands
 	memcpy(messageCommands, sendBuf, sizeof(uint8_t));	//copy the first two chars
 	memcpy(messageCommands + sizeof(uint8_t), sendBuf + sizeof(uint8_t), sizeof(uint8_t));
@@ -334,7 +315,13 @@ void processStdin(int socketNum, char * argv[]){
 	}
 }
 
-void parseDataFromServer(uint8_t * dataBuffer, int messageLen){
+/**
+ * @brief
+ * parsing the direct message from the server
+ * @param databuffer
+ * @param messageLen
+*/
+void parseDirectMessageFromServer(uint8_t * dataBuffer, int messageLen){
 	struct MultiSingleDestiHeader * directMessageHead = (struct MultiSingleDestiHeader *)malloc(sizeof(struct MultiSingleDestiHeader));
 	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
 	uint8_t senderHandelName[directMessageHead->senderHandelLen + 1];
@@ -350,6 +337,56 @@ void parseDataFromServer(uint8_t * dataBuffer, int messageLen){
 	memcpy(messageData, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + directMessageHead->destHandelLen, messageDataLen);
 	messageData[messageDataLen] = '\0';	//add the null termination before printing the data
 	printf("\n%s: %s\n",senderHandelName, messageData);
+}
+
+/**
+ * @brief
+ * parsing the direct message from the server
+ * @param databuffer
+ * @param messageLen
+*/
+void processMultiCastMessageFromServer(uint8_t * dataBuffer, int messageLen){
+	struct MultiSingleDestiHeader * directMessageHead = (struct MultiSingleDestiHeader *)malloc(sizeof(struct MultiSingleDestiHeader));
+	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
+	uint8_t senderHandelName[directMessageHead->senderHandelLen + 1];
+	senderHandelName[directMessageHead->senderHandelLen] = '\0';
+	memcpy(senderHandelName,dataBuffer + sizeof(uint8_t), directMessageHead->senderHandelLen);
+	memcpy(&directMessageHead->destinationHandels, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen, sizeof(uint8_t));
+
+	//to store the length of each handles and handle names
+	char destHandleName1[9][MAX_HANDLE_SIZE];
+	uint8_t destHandleNameLenghts1[9];
+
+	int valueOffset = sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t);
+	for(int i=0; i<directMessageHead->destinationHandels;i++){
+		memcpy(&destHandleNameLenghts1[i], dataBuffer + valueOffset, sizeof(uint8_t));	//grab the lenght of handel
+		valueOffset = valueOffset + sizeof(uint8_t);
+		memcpy(destHandleName1[i], dataBuffer + valueOffset, destHandleNameLenghts1[i]);
+		valueOffset += destHandleNameLenghts1[i];
+	}
+
+	
+	int messageDataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen - sizeof(uint8_t);
+	//subtract the handel length and handel size from the messageLen
+	for(int i=0;i<directMessageHead->destinationHandels;i++){
+		messageDataLen -= (sizeof(uint8_t) + destHandleNameLenghts1[i]);
+	}
+
+	uint8_t messageData[messageDataLen];
+	memcpy(messageData, dataBuffer + valueOffset, messageDataLen);
+	messageData[messageDataLen] = '\0';
+	//output the data to the clinet
+	printf("\n%s: %s\n",senderHandelName, messageData);
+}
+
+void ProcessMessageError(uint8_t * dataBuffer, int messageLen){
+	//first bit contains the handelLength
+	int handelLen = dataBuffer[0];
+	uint8_t handelName[handelLen + 1];
+	memcpy(handelName,dataBuffer + sizeof(uint8_t), handelLen);
+	handelName[handelLen] = '\0';
+
+	printf("Client with handle %s does not exist.\n",handelName);
 }
 
 /**
@@ -371,9 +408,14 @@ void processMsgFromServer(int serverSocket){
 
 	if (messageLen > 0)
 	{
-		// printf("Message received on socket: %u, Message Length: %d, Data: %s\n", serverSocket, messageLen, dataBuffer);
-		if(flag == GOOD_HANDEL_FLAG){
-			parseDataFromServer(dataBuffer, messageLen);
+		if(flag == INDIVIDUAL_PACKET_FLAG){
+			parseDirectMessageFromServer(dataBuffer, messageLen);
+		}
+		else if(flag == MULTI_CAST_FLAG){
+			processMultiCastMessageFromServer(dataBuffer, messageLen);
+		}
+		else if(flag == ERROR_MESSAGE_FLAG){
+			ProcessMessageError(dataBuffer, messageLen);
 		}
 	}
 	else

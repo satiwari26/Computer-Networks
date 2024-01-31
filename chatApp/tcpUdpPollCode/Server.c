@@ -36,6 +36,7 @@
 #define CLIENT_INIT_FLAG 1
 #define MULTI_CAST_FLAG 6
 #define MAX_HANDLE_SIZE 100
+#define ERROR_MESSAGE_FLAG 7
 
 /**
  * @brief
@@ -63,7 +64,7 @@ void printString(char * dataBuff, int sizeOfBuff){
  * @brief
  * parsing the direct message flag information
 */
-void MultimodeMessage(uint8_t * dataBuffer, int messageLen){
+void MultimodeMessage(uint8_t * dataBuffer, int messageLen, int clientSocket){
 	struct SingleDestiHeader * directMessageHead = (struct SingleDestiHeader *)malloc(sizeof(struct SingleDestiHeader));
 	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
 	uint8_t senderHandelName[directMessageHead->senderHandelLen];
@@ -82,10 +83,6 @@ void MultimodeMessage(uint8_t * dataBuffer, int messageLen){
 		valueOffset += destHandleNameLenghts1[i];
 	}
 
-
-	// memcpy(&directMessageHead->destHandelLen, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t), sizeof(uint8_t));
-	// uint8_t destinationHandelName[directMessageHead->destHandelLen];
-	// memcpy(destinationHandelName,dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t),directMessageHead->destHandelLen);
 	
 	int messageDataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen - sizeof(uint8_t);
 	//subtract the handel length and handel size from the messageLen
@@ -96,22 +93,38 @@ void MultimodeMessage(uint8_t * dataBuffer, int messageLen){
 	uint8_t messageData[messageDataLen];
 	memcpy(messageData, dataBuffer + valueOffset, messageDataLen);
 
-	//finding if the handles exist in the handel set:
-	bool handleExist = true;
+	//finding if the handles exist in the handel set and forwarding the messges based off that
 	for(int i=0;i<directMessageHead->destinationHandels;i++){
-		int SocketNumber = getSocketNumber(destHandleName1[i],destHandleNameLenghts1[i]);
-		if(SocketNumber == -1){
-			handleExist = false;
-			break;
+		int destinationSocketNum = getSocketNumber(destHandleName1[i],destHandleNameLenghts1[i]);
+		if(destinationSocketNum == -1){ //if handel name doesn't exist in the handel Set, send Error packet flag
+			uint8_t handelError[sizeof(uint8_t) + destHandleNameLenghts1[i]];
+			memcpy(handelError, &destHandleNameLenghts1[i], sizeof(uint8_t));
+			memcpy(handelError + sizeof(uint8_t), destHandleName1[i],destHandleNameLenghts1[i]);
+			int sendingFlag = sendPDU(clientSocket, ERROR_MESSAGE_FLAG, handelError, sizeof(uint8_t) + destHandleNameLenghts1[i]);
+			if (sendingFlag < 0)
+			{
+				perror("send call");
+				exit(-1);
+			}
+		}
+		else{	//forward the message to all the clients
+			printf("Destination handel Port: %d",destinationSocketNum);
+			int forwardDirectMessage = sendPDU(destinationSocketNum, MULTI_CAST_FLAG, (uint8_t *)dataBuffer, messageLen);
+			if (forwardDirectMessage < 0)
+			{
+				perror("send call");
+				exit(-1);
+			}
 		}
 	}
+
 }
 
 /**
  * @brief
  * parsing the direct message flag information
 */
-void DirectMessage(uint8_t * dataBuffer, int messageLen){
+void DirectMessage(uint8_t * dataBuffer, int messageLen, int clientSocket){
 	struct SingleDestiHeader * directMessageHead = (struct SingleDestiHeader *)malloc(sizeof(struct SingleDestiHeader));
 	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
 	uint8_t senderHandelName[directMessageHead->senderHandelLen];
@@ -127,11 +140,19 @@ void DirectMessage(uint8_t * dataBuffer, int messageLen){
 
 	int destinationSocketNum = getSocketNumber((char *)destinationHandelName, directMessageHead->destHandelLen);
 	if(destinationSocketNum == -1){
-		printf("The handel doesn't exist.");
+		uint8_t handelError[sizeof(uint8_t) + directMessageHead->destHandelLen];
+		memcpy(handelError, &directMessageHead->destHandelLen, sizeof(uint8_t));
+		memcpy(handelError + sizeof(uint8_t), destinationHandelName,directMessageHead->destHandelLen);
+		int sendingFlag = sendPDU(clientSocket, ERROR_MESSAGE_FLAG, handelError, sizeof(uint8_t) + directMessageHead->destHandelLen);
+		if (sendingFlag < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
 	}
 	else{
 		printf("Destination handel Port: %d",destinationSocketNum);
-		int forwardDirectMessage = sendPDU(destinationSocketNum, GOOD_HANDEL_FLAG, (uint8_t *)dataBuffer, messageLen);
+		int forwardDirectMessage = sendPDU(destinationSocketNum, INDIVIDUAL_PACKET_FLAG, (uint8_t *)dataBuffer, messageLen);
 		if (forwardDirectMessage < 0)
 		{
 			perror("send call");
@@ -206,10 +227,10 @@ void processClient(int clientSocket){
 		confirmHandelName(clientSocket, dataBuffer);
 	}
 	else if(flag == INDIVIDUAL_PACKET_FLAG && messageLen > 0){
-		DirectMessage(dataBuffer, messageLen);
+		DirectMessage(dataBuffer, messageLen, clientSocket);
 	}
 	else if(flag == MULTI_CAST_FLAG && messageLen > 0){
-		MultimodeMessage(dataBuffer, messageLen);
+		MultimodeMessage(dataBuffer, messageLen, clientSocket);
 	}
 
 	if (messageLen > 0)
