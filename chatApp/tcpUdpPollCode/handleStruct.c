@@ -173,3 +173,28 @@ char * getHandleName(int sockeNumber){
     //at this point if not found the socketNumber return -1
     return NULL;
 }
+
+/**
+ * @brief
+ * provides the number of the handleCounts and Handle Names
+ * with 1 bytes padded in front of each handle names
+*/
+uint32_t HandlesCount(uint8_t * handelNames){
+    struct handleTable * curr = handleHeader;
+    uint32_t HandlesCounts = 0;
+    if(curr == NULL){
+        handelNames = NULL;
+        return 0;
+    }
+
+    int offSetPointer = 0;
+    while(curr != NULL){
+        HandlesCounts++;
+        memcpy(handelNames + offSetPointer,&curr->handelLen, sizeof(uint8_t));
+        memcpy(handelNames + offSetPointer + sizeof(uint8_t), (uint8_t *)curr->handleName, curr->handelLen);
+        offSetPointer += (curr->handelLen + sizeof(uint8_t));
+        curr = curr->next;
+    }
+
+    return HandlesCounts;
+}

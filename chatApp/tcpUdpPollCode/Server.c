@@ -37,6 +37,10 @@
 #define MULTI_CAST_FLAG 6
 #define MAX_HANDLE_SIZE 100
 #define ERROR_MESSAGE_FLAG 7
+#define HANDLE_LIST_FLAG 10
+#define SERVER_HANDEL_FLAG 11
+#define EACH_HANDEL_SEND_FLAG 12
+#define LIST_END_FLAG 13
 
 /**
  * @brief
@@ -206,6 +210,63 @@ void confirmHandelName(int clientSocket, uint8_t * dataBuffer){
 
 /**
  * @brief
+ * Sends the flag 11 to the client along with the 32 bits ntos header
+ * @param clientSocket
+ * @param dataBuffer
+*/
+void ListRequest(int clientSocket, uint8_t * dataBuffer){
+	uint32_t NumberOfHandels = 0;	//to store the number of the handles present
+	uint8_t HandleNames[MAXBUF];	//to store the handle Names
+	//get the handle names and number of handles
+	NumberOfHandels = HandlesCount(HandleNames);
+
+
+	//sending the number of handles back to client with flag 11
+	uint32_t NumberOfHandels_NO = htonl(NumberOfHandels);
+	uint8_t NumberOfHandels_NO_Buff[4];
+	memcpy(&NumberOfHandels_NO_Buff[0],&NumberOfHandels_NO, sizeof(uint8_t));
+	memcpy(&NumberOfHandels_NO_Buff[1],((uint8_t*)&NumberOfHandels_NO) + sizeof(uint8_t), sizeof(uint8_t));
+	memcpy(&NumberOfHandels_NO_Buff[2],((uint8_t*)&NumberOfHandels_NO) + 2*sizeof(uint8_t), sizeof(uint8_t));
+	memcpy(&NumberOfHandels_NO_Buff[3],((uint8_t*)&NumberOfHandels_NO) + 3*sizeof(uint8_t), sizeof(uint8_t));
+	int sendResponseHandelRequest = sendPDU(clientSocket, SERVER_HANDEL_FLAG,NumberOfHandels_NO_Buff, sizeof(uint32_t));
+	if (sendResponseHandelRequest < 0)
+	{
+		perror("send call");
+		exit(-1);
+	}
+
+	//send the handel name with flag
+	int valOffset = 0;
+	uint8_t currHandelLen;
+	for(int i=0; i<NumberOfHandels;i++){
+		memcpy(&currHandelLen, HandleNames +valOffset, sizeof(uint8_t));
+		uint8_t currHandleName[currHandelLen];
+		memcpy(&currHandleName, HandleNames +valOffset + sizeof(uint8_t), currHandelLen);
+		valOffset += (currHandelLen + sizeof(uint8_t));
+
+		uint8_t handelNamesBuffer[currHandelLen + sizeof(uint8_t)];
+		memcpy(handelNamesBuffer, &currHandelLen, sizeof(uint8_t));
+		memcpy(handelNamesBuffer + sizeof(uint8_t), currHandleName, currHandelLen);
+
+		int sendingHandlesFlag = sendPDU(clientSocket, EACH_HANDEL_SEND_FLAG, (uint8_t *)handelNamesBuffer, currHandelLen + sizeof(uint8_t));
+		if (sendingHandlesFlag < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
+	}
+	int finishClientListFlag = sendPDU(clientSocket, LIST_END_FLAG, (uint8_t *)NumberOfHandels_NO_Buff, 0);	//sending flag 13 with only chat header
+	if (finishClientListFlag < 0)
+	{
+		perror("send call");
+		exit(-1);
+	}
+
+
+}
+
+/**
+ * @brief
  * process the client's message that is sent to the server
  * @param clientSocket
 */
@@ -226,11 +287,17 @@ void processClient(int clientSocket){
 	if(flag == CLIENT_INIT_FLAG && messageLen > 0){
 		confirmHandelName(clientSocket, dataBuffer);
 	}
+	/**ProcessDirectMessage flag*/
 	else if(flag == INDIVIDUAL_PACKET_FLAG && messageLen > 0){
 		DirectMessage(dataBuffer, messageLen, clientSocket);
 	}
+	/**Process multicasting flag*/
 	else if(flag == MULTI_CAST_FLAG && messageLen > 0){
 		MultimodeMessage(dataBuffer, messageLen, clientSocket);
+	}
+	/**Process requesting list handel flag*/
+	else if(flag == HANDLE_LIST_FLAG && messageLen > 0){	//probably won't return the MessageLen in this case
+		ListRequest(clientSocket, dataBuffer);
 	}
 
 	if (messageLen > 0)

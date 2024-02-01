@@ -20,6 +20,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "networks.h"
 #include "safeUtil.h"
@@ -36,6 +37,10 @@
 #define GOOD_HANDEL_FLAG 2
 #define MULTI_CAST_FLAG 6
 #define ERROR_MESSAGE_FLAG 7
+#define HANDLE_LIST_FLAG 10
+#define SERVER_HANDEL_FLAG 11
+#define EACH_HANDEL_SEND_FLAG 12
+#define LIST_END_FLAG 13
 
 
 void sendToServer(int socketNum);
@@ -196,7 +201,7 @@ void processStdin(int socketNum, char * argv[]){
 			printf("Amount of data sent is: %d\n", sent);
 		}
 	}
-	else if(strcmp(messageCommands, "%C") == 0 || strcmp(messageCommands, "%c") == 0){	//sending individual message
+	else if(strcmp(messageCommands, "%C") == 0 || strcmp(messageCommands, "%c") == 0){	//sending multicasting message
 		//updating the package length for each of the client destHandelName
 		for(int i=0;i<singleDesHeader->destinationHandels;i++){
 			packagesLength += sizeof(uint8_t) + destHandleNameLenghts1[i];
@@ -313,6 +318,16 @@ void processStdin(int socketNum, char * argv[]){
 			printf("Amount of data sent is: %d\n", sent);
 		}
 	}
+	else if(strcmp(messageCommands, "%L") == 0 || strcmp(messageCommands, "%l") == 0){	//Requesting the list of handel from server
+		uint8_t EmptyBuff[0];	//for forming the flag 10 packet
+		int dataSend = sendPDU(socketNum, HANDLE_LIST_FLAG, EmptyBuff,0);	//seding the empty buffer and only the LIST_FLAG
+		if (dataSend < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
+		printf("Amount of data sent is: %d\n", dataSend);
+	}
 }
 
 /**
@@ -379,6 +394,13 @@ void processMultiCastMessageFromServer(uint8_t * dataBuffer, int messageLen){
 	printf("\n%s: %s\n",senderHandelName, messageData);
 }
 
+/**
+ * @brief
+ * server returns the error when it doesn't find the
+ * handel name in the handel list
+ * @param dataBuffer
+ * @param messageLen
+*/
 void ProcessMessageError(uint8_t * dataBuffer, int messageLen){
 	//first bit contains the handelLength
 	int handelLen = dataBuffer[0];
@@ -386,7 +408,57 @@ void ProcessMessageError(uint8_t * dataBuffer, int messageLen){
 	memcpy(handelName,dataBuffer + sizeof(uint8_t), handelLen);
 	handelName[handelLen] = '\0';
 
-	printf("Client with handle %s does not exist.\n",handelName);
+	printf("\nClient with handle %s does not exist.\n",handelName);
+}
+
+/**
+ * @brief
+ * client request for the handel list from the server
+ * server response with multiple flags.
+ * Thread is blocked and no other poll is established
+ * until flag 13 is received
+ * @param dataBuffer
+ * @param messageLen
+*/
+void handelNamesListHandler(uint8_t * dataBuffer, int messageLen){
+	uint32_t num_handles;
+	memcpy(&num_handles,dataBuffer,sizeof(uint32_t));
+	uint32_t num_handles_HO = ntohl(num_handles);
+
+	printf("\nNumber of clients: %d",num_handles_HO);
+
+	//block the pointer in the handle until flag 13 is received
+	uint8_t flag;
+	uint32_t counter = 0;	//keep track if we received the same number of handles as promised
+
+	removeFromPollSet(STDIN_FILENO);	//remove the stdin temporary
+	bool isLastFlagReceived = false;
+	while(isLastFlagReceived == false){
+
+		int pollVal = pollCall(-1);	//block the poll untit we receive something from server
+		
+		if ((messageLen = recvPDU(pollVal,&flag, dataBuffer, MAXBUF)) < 0)
+		{
+			perror("recv call");
+			exit(-1);
+		}
+		if(flag == EACH_HANDEL_SEND_FLAG){
+			uint8_t handelNamesLen;
+			memcpy(&handelNamesLen,dataBuffer,sizeof(uint8_t));
+			uint8_t handelNames[handelNamesLen + sizeof(uint8_t)];
+			memcpy(&handelNames,dataBuffer + sizeof(uint8_t),handelNamesLen);
+			handelNames[handelNamesLen] = '\0';
+			printf("\n\t%s",handelNames);
+			fflush(stdout);
+		}
+		if(flag == LIST_END_FLAG && counter == num_handles_HO){
+			break;
+			isLastFlagReceived = true;
+		}
+		counter++;
+	}
+	addToPollSet(STDIN_FILENO);	//add back the stdin to the poll set
+
 }
 
 /**
@@ -417,6 +489,10 @@ void processMsgFromServer(int serverSocket){
 		else if(flag == ERROR_MESSAGE_FLAG){
 			ProcessMessageError(dataBuffer, messageLen);
 		}
+		else if(flag == SERVER_HANDEL_FLAG){
+			handelNamesListHandler(dataBuffer, messageLen);
+		}
+		
 	}
 	else
 	{

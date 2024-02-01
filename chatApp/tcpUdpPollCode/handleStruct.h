@@ -38,3 +38,10 @@ int getSocketNumber(char * handleName, uint8_t handelLen);
  * @param handleName
 */
 char * getHandleName(int sockeNumber);
+
+/**
+ * @brief
+ * provides the number of the handleCounts and Handle Names
+ * with 1 bytes padded in front of each handle names
+*/
+uint32_t HandlesCount(uint8_t * handelNames);
