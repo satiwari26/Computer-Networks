@@ -42,6 +42,8 @@
 #define EACH_HANDEL_SEND_FLAG 12
 #define LIST_END_FLAG 13
 #define BROADCAST_FLAG 4
+#define EXIT_FLAG 8
+#define ACK_EXIT_FLAG 9
 
 /**
  * @brief
@@ -289,6 +291,18 @@ void processBroadCast(uint8_t * dataBuffer, int messageLen){
 	
 }
 
+void existAndRemoveHandel(int clientSocket){
+	//removing the handel name from the handel list
+	removeHandleBySocket(clientSocket);
+	uint8_t exitBuffer[0];
+	int sendingFlag = sendPDU(clientSocket, ACK_EXIT_FLAG, exitBuffer, 0);
+	if (sendingFlag < 0)
+	{
+		perror("send call");
+		exit(-1);
+	}
+}
+
 /**
  * @brief
  * process the client's message that is sent to the server
@@ -325,6 +339,9 @@ void processClient(int clientSocket){
 	}
 	else if(flag == BROADCAST_FLAG){
 		processBroadCast(dataBuffer, messageLen);
+	}
+	else if(flag == EXIT_FLAG){
+		existAndRemoveHandel(clientSocket);
 	}
 
 	if (messageLen > 0)

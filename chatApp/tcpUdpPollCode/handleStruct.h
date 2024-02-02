@@ -61,3 +61,10 @@ uint32_t onlyHandelCount();
  * @return HandlesCounts
 */
 void HandlesSocketNum(int * HandelsSocket);
+
+/**
+ * @brief
+ * removes the handle element from the list
+ * @param socketNumber (for the comparison of the file)
+*/
+void removeHandleBySocket(int sockeNumber);

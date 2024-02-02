@@ -123,6 +123,43 @@ void removeHandle(char * handleName, uint8_t handelLen){
     existHandle == false ? printf("The handle doesn't exist\n") : printf("The handle have been deleted\n");
 }
 
+
+/**
+ * @brief
+ * removes the handle element from the list
+ * @param socketNumber (for the comparison of the file)
+*/
+void removeHandleBySocket(int sockeNumber){
+    bool existHandle = false;
+    if(handleHeader == NULL){
+        printf("Error there are no clients on the handle");
+        return;
+    }
+    struct handleTable * curr = handleHeader;
+    struct handleTable * prev = curr;
+    do{
+        if(curr->socket_number == sockeNumber){   //if the two socket number are same
+            if(curr == handleHeader){   //if the curr pointer is header move header to next
+                handleHeader = curr->next;
+                free(curr); //remove the current node from the link
+                existHandle = true;
+                break;
+            }
+            else{
+                prev->next = curr->next;
+                free(curr);
+                existHandle = true;
+                break;
+            }
+        }
+        prev = curr;
+        curr = curr->next;
+    }while(curr != NULL);
+
+    existHandle == false ? printf("The handle doesn't exist\n") : printf("The handle have been deleted\n");
+}
+
+
 /**
  * @brief
  * gets the socket number based of the handleName provided

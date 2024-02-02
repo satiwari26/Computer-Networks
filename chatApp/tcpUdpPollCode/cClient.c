@@ -42,6 +42,8 @@
 #define EACH_HANDEL_SEND_FLAG 12
 #define LIST_END_FLAG 13
 #define BROADCAST_FLAG 4
+#define EXIT_FLAG 8
+#define ACK_EXIT_FLAG 9
 
 
 void sendToServer(int socketNum);
@@ -389,6 +391,16 @@ void processStdin(int socketNum, char * argv[]){
 			printf("Amount of data sent is: %d\n", sent);
 		}
 	}
+	else if(strcmp(messageCommands, "%E") == 0 || strcmp(messageCommands, "%e") == 0){
+		uint8_t exitingData[0];
+		sent =  sendPDU(socketNum, EXIT_FLAG, exitingData, 0);
+		if (sent < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
+		printf("Amount of data sent is: %d\n", sent);
+	}
 }
 
 /**
@@ -518,6 +530,7 @@ void handelNamesListHandler(uint8_t * dataBuffer, int messageLen){
 		}
 		counter++;
 	}
+	printf("\n");
 	addToPollSet(STDIN_FILENO);	//add back the stdin to the poll set
 }
 
@@ -577,6 +590,9 @@ void processMsgFromServer(int serverSocket){
 		}
 		else if(flag == BROADCAST_FLAG){
 			processBroadCastMessage(dataBuffer,messageLen);
+		}
+		else if(flag == ACK_EXIT_FLAG){
+			exit(1);
 		}
 		
 	}
