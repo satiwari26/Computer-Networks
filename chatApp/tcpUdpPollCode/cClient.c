@@ -28,7 +28,7 @@
 #include "pollLib.h"
 #include "recvPDU.h"
 
-#define MAXBUF 1024
+#define MAXBUF 1400
 #define DEBUG_FLAG 1
 #define MAX_HANDLE_SIZE 100
 #define CLIENT_INIT_FLAG 1
@@ -89,6 +89,12 @@ void processStdin(int socketNum, char * argv[]){
 	struct MultiSingleDestiHeader *singleDesHeader = (struct MultiSingleDestiHeader *)malloc(sizeof(struct MultiSingleDestiHeader));
 	
 	sendLen = readFromStdin(sendBuf);
+
+	if(sendLen == 0){	//when the input message length > 1400
+		printf("\n Message size to big to be handel. Please try again.");
+		return;
+	}
+
 	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
 
 	//perform the parsing of the data from the user input
@@ -163,7 +169,7 @@ void processStdin(int socketNum, char * argv[]){
 					perror("send call");
 					exit(-1);
 				}
-				printf("Amount of data sent is: %d\n", sent);
+				free(packageBuff);
 			}
 		}
 		else if(sendermessageLength == 0){	//if no message is provided
@@ -182,7 +188,7 @@ void processStdin(int socketNum, char * argv[]){
 				perror("send call");
 				exit(-1);
 			}
-			printf("Amount of data sent is: %d\n", sent);
+			free(packageBuff);
 		}
 		else{	//message is within the bounds
 			memcpy(messageBuff,sendBuf + singleDesHeader->destHandelLen + 3 + 1, sendermessageLength);
@@ -201,7 +207,7 @@ void processStdin(int socketNum, char * argv[]){
 				perror("send call");
 				exit(-1);
 			}
-			printf("Amount of data sent is: %d\n", sent);
+			free(packageBuff);
 		}
 	}
 	else if(strcmp(messageCommands, "%C") == 0 || strcmp(messageCommands, "%c") == 0){	//sending multicasting message
@@ -254,7 +260,7 @@ void processStdin(int socketNum, char * argv[]){
 					perror("send call");
 					exit(-1);
 				}
-				printf("Amount of data sent is: %d\n", sent);
+				free(packageBuff);
 			}
 		}
 		else if(sendermessageLength == 0){	//if no message is provided
@@ -283,7 +289,7 @@ void processStdin(int socketNum, char * argv[]){
 				perror("send call");
 				exit(-1);
 			}
-			printf("Amount of data sent is: %d\n", sent);
+			free(packageBuff);
 		}
 		else{	//message is within the bounds
 			//getting the starting position for the sendBug
@@ -318,7 +324,7 @@ void processStdin(int socketNum, char * argv[]){
 				perror("send call");
 				exit(-1);
 			}
-			printf("Amount of data sent is: %d\n", sent);
+			free(packageBuff);
 		}
 	}
 	else if(strcmp(messageCommands, "%L") == 0 || strcmp(messageCommands, "%l") == 0){	//Requesting the list of handel from server
@@ -329,7 +335,6 @@ void processStdin(int socketNum, char * argv[]){
 			perror("send call");
 			exit(-1);
 		}
-		printf("Amount of data sent is: %d\n", dataSend);
 	}
 	else if(strcmp(messageCommands, "%B") == 0 || strcmp(messageCommands, "%b") == 0){	//Boradcasting the message:	
 
@@ -356,7 +361,7 @@ void processStdin(int socketNum, char * argv[]){
 					perror("send call");
 					exit(-1);
 				}
-				printf("Amount of data sent is: %d\n", sent);
+				free(packageBuff);
 			}
 		}
 		else if(sendermessageLength == 0){	//if no message is provided
@@ -372,7 +377,7 @@ void processStdin(int socketNum, char * argv[]){
 				perror("send call");
 				exit(-1);
 			}
-			printf("Amount of data sent is: %d\n", sent);
+			free(packageBuff);
 		}
 		else{	//message is within the bounds
 			memcpy(messageBuff,sendBuf + 3, sendermessageLength);
@@ -388,7 +393,7 @@ void processStdin(int socketNum, char * argv[]){
 				perror("send call");
 				exit(-1);
 			}
-			printf("Amount of data sent is: %d\n", sent);
+			free(packageBuff);
 		}
 	}
 	else if(strcmp(messageCommands, "%E") == 0 || strcmp(messageCommands, "%e") == 0){
@@ -399,7 +404,9 @@ void processStdin(int socketNum, char * argv[]){
 			perror("send call");
 			exit(-1);
 		}
-		printf("Amount of data sent is: %d\n", sent);
+	}
+	else{
+		printf("\nPlease Enter the right Message Command to send the message.\n");
 	}
 }
 
@@ -732,6 +739,9 @@ int readFromStdin(uint8_t * buffer)
 			buffer[inputLen] = aChar;
 			inputLen++;
 		}
+	}
+	if(inputLen == MAXBUF || inputLen > MAXBUF){	//return 0 bytes so the message doesn't get process 
+		return 0;
 	}
 	
 	// Null terminate the string
