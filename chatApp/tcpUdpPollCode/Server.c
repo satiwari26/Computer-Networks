@@ -41,6 +41,7 @@
 #define SERVER_HANDEL_FLAG 11
 #define EACH_HANDEL_SEND_FLAG 12
 #define LIST_END_FLAG 13
+#define BROADCAST_FLAG 4
 
 /**
  * @brief
@@ -261,8 +262,31 @@ void ListRequest(int clientSocket, uint8_t * dataBuffer){
 		perror("send call");
 		exit(-1);
 	}
+}
 
+/**
+ * @brief
+ * Broad cast the message to all the users logged in.
+ * @param databuffer
+ * @param messageLen
+*/
+void processBroadCast(uint8_t * dataBuffer, int messageLen){
 
+	uint32_t handlesCount = onlyHandelCount();
+	int HandlesSocket[handlesCount];	//get the socket of all the handles
+
+	HandlesSocketNum(HandlesSocket);	//get all the socket number for broadcasting
+	
+	//sending the message to all the sockets
+	for(uint32_t i=0;i<handlesCount;i++){
+		int sendingFlag = sendPDU(HandlesSocket[i], BROADCAST_FLAG, dataBuffer, messageLen);
+		if (sendingFlag < 0)
+		{
+			perror("send call");
+			exit(-1);
+		}
+	}
+	
 }
 
 /**
@@ -298,6 +322,9 @@ void processClient(int clientSocket){
 	/**Process requesting list handel flag*/
 	else if(flag == HANDLE_LIST_FLAG && messageLen > 0){	//probably won't return the MessageLen in this case
 		ListRequest(clientSocket, dataBuffer);
+	}
+	else if(flag == BROADCAST_FLAG){
+		processBroadCast(dataBuffer, messageLen);
 	}
 
 	if (messageLen > 0)
@@ -358,28 +385,6 @@ int main(int argc, char *argv[])
 	
 	return 0;
 }
-
-// void recvFromClient(int clientSocket)
-// {
-// 	uint8_t dataBuffer[MAXBUF];
-// 	int messageLen = 0;
-	
-// 	//now get the data from the client_socket
-// 	if ((messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF)) < 0)
-// 	{
-// 		perror("recv call");
-// 		exit(-1);
-// 	}
-
-// 	if (messageLen > 0)
-// 	{
-// 		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", clientSocket, messageLen, dataBuffer);
-// 	}
-// 	else
-// 	{
-// 		printf("Connection closed by other side\n");
-// 	}
-// }
 
 int checkArgs(int argc, char *argv[])
 {

@@ -41,6 +41,7 @@
 #define SERVER_HANDEL_FLAG 11
 #define EACH_HANDEL_SEND_FLAG 12
 #define LIST_END_FLAG 13
+#define BROADCAST_FLAG 4
 
 
 void sendToServer(int socketNum);
@@ -328,6 +329,66 @@ void processStdin(int socketNum, char * argv[]){
 		}
 		printf("Amount of data sent is: %d\n", dataSend);
 	}
+	else if(strcmp(messageCommands, "%B") == 0 || strcmp(messageCommands, "%b") == 0){	//Boradcasting the message:	
+
+		packagesLength -= sizeof(uint8_t);	//since there is no destination handles, we don't need the extra byte
+
+		//subtracting the command bytes from the total user length
+		int sendermessageLength = sendLen - 3;
+		if(sendermessageLength > MAX_MESSAGE_LENGTH-1){
+			for (int i = 3; i < sendLen; i += min(sendLen - i, MAX_MESSAGE_LENGTH - 1)) {
+				int chunkSize = min(sendLen - i, MAX_MESSAGE_LENGTH - 1);
+				memcpy(messageBuff, sendBuf + i, chunkSize);
+				messageBuff[chunkSize] = '\0';
+				packagesLength += chunkSize;	//dynamic packageLength
+				
+				uint8_t * packageBuff = (uint8_t *)malloc(packagesLength);	//dynamic packageBuffer
+				memcpy(packageBuff, &singleDesHeader->senderHandelLen, sizeof(uint8_t));
+				memcpy(packageBuff + sizeof(uint8_t), singleDesHeader->senderHandelName, singleDesHeader->senderHandelLen);
+				memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen, messageBuff, chunkSize);
+
+				sent =  sendPDU(socketNum, BROADCAST_FLAG, packageBuff, packagesLength);
+				packagesLength -= chunkSize;	
+				if (sent < 0)
+				{
+					perror("send call");
+					exit(-1);
+				}
+				printf("Amount of data sent is: %d\n", sent);
+			}
+		}
+		else if(sendermessageLength == 0){	//if no message is provided
+			packagesLength += sizeof(uint8_t);
+			messageBuff[0] = '\n';
+			uint8_t * packageBuff = (uint8_t *)malloc(packagesLength);
+			memcpy(packageBuff, &singleDesHeader->senderHandelLen, sizeof(uint8_t));
+			memcpy(packageBuff + sizeof(uint8_t), singleDesHeader->senderHandelName, singleDesHeader->senderHandelLen);
+			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen, messageBuff, sizeof(uint8_t));
+			sent =  sendPDU(socketNum, BROADCAST_FLAG, packageBuff, packagesLength);
+			if (sent < 0)
+			{
+				perror("send call");
+				exit(-1);
+			}
+			printf("Amount of data sent is: %d\n", sent);
+		}
+		else{	//message is within the bounds
+			memcpy(messageBuff,sendBuf + 3, sendermessageLength);
+			packagesLength += sendermessageLength;
+			uint8_t * packageBuff = (uint8_t *)malloc(packagesLength);
+			memcpy(packageBuff, &singleDesHeader->senderHandelLen, sizeof(uint8_t));
+			memcpy(packageBuff + sizeof(uint8_t), singleDesHeader->senderHandelName, singleDesHeader->senderHandelLen);
+			memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen, messageBuff, sendermessageLength);
+			messageBuff[sendermessageLength] = '\0';
+			sent =  sendPDU(socketNum, BROADCAST_FLAG, packageBuff, packagesLength);
+			if (sent < 0)
+			{
+				perror("send call");
+				exit(-1);
+			}
+			printf("Amount of data sent is: %d\n", sent);
+		}
+	}
 }
 
 /**
@@ -458,6 +519,28 @@ void handelNamesListHandler(uint8_t * dataBuffer, int messageLen){
 		counter++;
 	}
 	addToPollSet(STDIN_FILENO);	//add back the stdin to the poll set
+}
+
+/**
+ * @brief
+ * processes the broadCasr message on the client side
+ * and prints it on the console for the user
+ * @param dataBuffer
+ * @param messageLen
+*/
+void processBroadCastMessage(uint8_t * dataBuffer, int messageLen){
+	struct MultiSingleDestiHeader * directMessageHead = (struct MultiSingleDestiHeader *)malloc(sizeof(struct MultiSingleDestiHeader));
+	memcpy(&directMessageHead->senderHandelLen, dataBuffer, sizeof(uint8_t));
+	uint8_t senderHandelName[directMessageHead->senderHandelLen + sizeof(uint8_t)];
+	memcpy(senderHandelName,dataBuffer + sizeof(uint8_t), directMessageHead->senderHandelLen);
+	senderHandelName[directMessageHead->senderHandelLen] = '\0';
+
+	int dataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen;
+
+	uint8_t message[dataLen]; 
+	memcpy(message,dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen,dataLen);
+
+	printf("\n%s: %s\n",senderHandelName, message);
 
 }
 
@@ -491,6 +574,9 @@ void processMsgFromServer(int serverSocket){
 		}
 		else if(flag == SERVER_HANDEL_FLAG){
 			handelNamesListHandler(dataBuffer, messageLen);
+		}
+		else if(flag == BROADCAST_FLAG){
+			processBroadCastMessage(dataBuffer,messageLen);
 		}
 		
 	}

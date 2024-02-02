@@ -198,3 +198,45 @@ uint32_t HandlesCount(uint8_t * handelNames){
 
     return HandlesCounts;
 }
+
+/**
+ * @brief
+ * function only returns the number of the handle counts
+ * present in the handle list
+ * @return HandlesCounts
+*/
+uint32_t onlyHandelCount(){
+    struct handleTable * curr = handleHeader;
+    uint32_t HandlesCounts = 0;
+    if(curr == NULL){
+        return 0;
+    }
+
+    while(curr != NULL){
+        HandlesCounts++;
+        curr = curr->next;
+    }
+
+    return HandlesCounts;
+}
+
+/**
+ * @brief
+ * provides the socket number for all the handles present
+ * @param HandlesSocket
+ * @return HandlesCounts
+*/
+void HandlesSocketNum(int * HandelsSocket){
+    struct handleTable * curr = handleHeader;
+    uint32_t HandlesCounts = 0;
+    if(curr == NULL){
+        HandelsSocket = NULL;
+        return;
+    }
+
+    while(curr != NULL){
+        memcpy(&HandelsSocket[HandlesCounts],&curr->socket_number, sizeof(int));
+        curr = curr->next;
+        HandlesCounts++;
+    }
+}

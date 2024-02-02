@@ -45,3 +45,19 @@ char * getHandleName(int sockeNumber);
  * with 1 bytes padded in front of each handle names
 */
 uint32_t HandlesCount(uint8_t * handelNames);
+
+/**
+ * @brief
+ * function only returns the number of the handle counts
+ * present in the handle list
+ * @return HandlesCounts
+*/
+uint32_t onlyHandelCount();
+
+/**
+ * @brief
+ * provides the socket number for all the handles present
+ * @param HandlesSocket
+ * @return HandlesCounts
+*/
+void HandlesSocketNum(int * HandelsSocket);
