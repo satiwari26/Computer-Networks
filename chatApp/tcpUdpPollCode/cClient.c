@@ -28,7 +28,7 @@
 #include "pollLib.h"
 #include "recvPDU.h"
 
-#define MAXBUF 1400
+#define MAXBUF 500
 #define DEBUG_FLAG 1
 #define MAX_HANDLE_SIZE 100
 #define CLIENT_INIT_FLAG 1
@@ -44,6 +44,7 @@
 #define BROADCAST_FLAG 4
 #define EXIT_FLAG 8
 #define ACK_EXIT_FLAG 9
+#define ERROR_INIT_FLAG 3
 
 
 void sendToServer(int socketNum);
@@ -91,11 +92,11 @@ void processStdin(int socketNum, char * argv[]){
 	sendLen = readFromStdin(sendBuf);
 
 	if(sendLen == 0){	//when the input message length > 1400
-		printf("\n Message size to big to be handel. Please try again.");
+		fflush(stdin);
+		fflush(stdout);
+		printf("\n Error: The input Message size exceed the max limit.\n");
 		return;
 	}
-
-	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
 
 	//perform the parsing of the data from the user input
 	//parsing the commands
@@ -129,12 +130,17 @@ void processStdin(int socketNum, char * argv[]){
                                               destHandleName1[7],
                                               destHandleName1[8]);
 		//get the size of the each handel Name:
-		for(int i=0; i<singleDesHeader->destinationHandels;i++){
-			destHandleNameLenghts1[i] = strlen(destHandleName1[i]);
+		if(singleDesHeader->destinationHandels >= 2 && singleDesHeader->destinationHandels <= 9){
+			for(int i=0; i<singleDesHeader->destinationHandels;i++){
+				destHandleNameLenghts1[i] = strlen(destHandleName1[i]);
+			}
+		}
+		else{
+			printf("\nDestination Handles Number entered is Incorrect.\n");
+			return;
 		}
 	}
 
-	printf("Message Command: %s\n",messageCommands);
 	singleDesHeader->senderHandelLen = sendHandelLen;
 	singleDesHeader->senderHandelName = (uint8_t *)sendHandleName;
 	//package length containing the header info + dynamic message length
@@ -406,8 +412,10 @@ void processStdin(int socketNum, char * argv[]){
 		}
 	}
 	else{
-		printf("\nPlease Enter the right Message Command to send the message.\n");
+		printf("\nPlease Enter the right Message Command to send the message.\n \n");
 	}
+
+	free(singleDesHeader);
 }
 
 /**
@@ -432,6 +440,8 @@ void parseDirectMessageFromServer(uint8_t * dataBuffer, int messageLen){
 	memcpy(messageData, dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t) + directMessageHead->destHandelLen, messageDataLen);
 	messageData[messageDataLen] = '\0';	//add the null termination before printing the data
 	printf("\n%s: %s\n",senderHandelName, messageData);
+
+	free(directMessageHead);
 }
 
 /**
@@ -472,6 +482,7 @@ void processMultiCastMessageFromServer(uint8_t * dataBuffer, int messageLen){
 	messageData[messageDataLen] = '\0';
 	//output the data to the clinet
 	printf("\n%s: %s\n",senderHandelName, messageData);
+	free(directMessageHead);
 }
 
 /**
@@ -562,6 +573,8 @@ void processBroadCastMessage(uint8_t * dataBuffer, int messageLen){
 
 	printf("\n%s: %s\n",senderHandelName, message);
 
+	free(directMessageHead);
+
 }
 
 /**
@@ -605,7 +618,7 @@ void processMsgFromServer(int serverSocket){
 	}
 	else
 	{
-		printf("Connection closed by the server\n");
+		printf("Error: Server Terminated!\n");
 		//close the socket connection b/w client and server
 		close(serverSocket);
 		//remove the client from the socket-set
@@ -621,6 +634,8 @@ void processMsgFromServer(int serverSocket){
  * param carries the server socketnumber to perfrom that operation
 */
 void clientControl(int socketNum, char * argv[]){
+	fflush(stdin);
+	fflush(stdout);
 	int pollVal = pollCall(-1);
 	if(pollVal == STDIN_FILENO){
 		processStdin(socketNum, argv);
@@ -647,7 +662,6 @@ int loginRequest(uint8_t * val, int socketNumber, char * argv[]){
 	uint8_t flag = 0;	//to get the flag value from the server
 	//block the polling until we receive something from the server
 	int pollVal = pollCall(-1);
-	printf("%d\n",pollVal);
 	if(pollVal > 0){
 		uint8_t dataBuffer[MAXBUF];
 		int messageLen = 0;
@@ -657,9 +671,6 @@ int loginRequest(uint8_t * val, int socketNumber, char * argv[]){
 			perror("recv call");
 			exit(-1);
 		}
-		fflush(stdout);
-		printf("Message len: %d\n",messageLen);
-		printf("flag val from the server: %d\n",flag);
 		fflush(stdout);
 	}
 	return flag;
@@ -679,7 +690,6 @@ int setUpConnection(int socketNumber, char * argv[]){
 
     // First byte contains the length of the handle without null
     val[0] = strlen(argv[1]);
-	printf("%d",val[0]);
 
     // Copy the handle name into val starting from index 1
     memcpy(val + sizeof(uint8_t), argv[1], val[0]);
@@ -688,7 +698,7 @@ int setUpConnection(int socketNumber, char * argv[]){
 	uint8_t ServerAckFlag = loginRequest(val, socketNumber, argv);
 
 	//bad server response:
-	if(ServerAckFlag == 3){
+	if(ServerAckFlag == ERROR_INIT_FLAG){
 		printf("Error not the right Handel Name to perform the Operation.");
 		exit(-1);
 	}
@@ -707,31 +717,31 @@ int main(int argc, char * argv[])
 	socketNum = tcpClientSetup(argv[2], argv[3], DEBUG_FLAG);
 	//log in connection with the server
 	uint8_t ServerAckFlag = setUpConnection(socketNum, argv);
-
 	if(ServerAckFlag == 2){	//ok response from the server
 		//add the stdin to the poll-set
 		addToPollSet(STDIN_FILENO);
-
 		while(1){
+			fflush(stdin);
 			fflush(stdout);
 			printf("$: ");	//prompt the user to enter the information
 			fflush(stdout);  
 			clientControl(socketNum,argv);
 		}
 	}
-	
 	return 0;
 }
 
 int readFromStdin(uint8_t * buffer)
-{
+{	
+	fflush(stdin);
+	fflush(stdout);
 	char aChar = 0;
 	int inputLen = 0;      
 	
 	// Important you don't input more characters than you have space 
 	buffer[0] = '\0';
 	// printf("Enter data: ");
-	while (inputLen < (MAXBUF - 1) && aChar != '\n')
+	while (inputLen < (MAXBUF + 2) && aChar != '\n')
 	{
 		aChar = getchar();
 		if (aChar != '\n')
@@ -741,6 +751,8 @@ int readFromStdin(uint8_t * buffer)
 		}
 	}
 	if(inputLen == MAXBUF || inputLen > MAXBUF){	//return 0 bytes so the message doesn't get process 
+		fflush(stdin);
+		fflush(stdout);
 		return 0;
 	}
 	
@@ -761,7 +773,7 @@ void checkArgs(int argc, char * argv[])
 	}
 
 	if(sizeof(argv[1]) > MAX_HANDLE_SIZE){
-		printf("The handle length increased the max size buffer\n Current provided name: %s\n",argv[1]);
+		printf("Error: The Handle Name is too long: \n Current provided name: %s\n",argv[1]);
 		exit(-1);
 	}
 }

@@ -10,10 +10,10 @@ OBJS = networks.o gethostbyname.o pollLib.o safeUtil.o sendPDU.o recvPDU.o handl
 all:   cClient Server
 
 cClient: cClient.c $(OBJS)
-	$(CC) $(CFLAGS) -o cClient cClient.c  $(OBJS) $(LIBS)
+	$(CC) $(CFLAGS) -o cclient cClient.c  $(OBJS) $(LIBS)
 
 Server: Server.c $(OBJS)
-	$(CC) $(CFLAGS) -o Server Server.c $(OBJS) $(LIBS)
+	$(CC) $(CFLAGS) -o server Server.c $(OBJS) $(LIBS)
 
 .c.o:
 	gcc -c $(CFLAGS) $< -o $@ $(LIBS)

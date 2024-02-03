@@ -60,13 +60,6 @@ struct SingleDestiHeader{
 // void recvFromClient(int clientSocket);
 int checkArgs(int argc, char *argv[]);
 
-void printString(char * dataBuff, int sizeOfBuff){
-	for(int i=0;i<sizeOfBuff;i++){
-		printf("%c",dataBuff[i]);
-	}
-	printf("\n");
-}
-
 /**
  * @brief
  * parsing the direct message flag information
@@ -115,7 +108,6 @@ void MultimodeMessage(uint8_t * dataBuffer, int messageLen, int clientSocket){
 			}
 		}
 		else{	//forward the message to all the clients
-			printf("Destination handel Port: %d",destinationSocketNum);
 			int forwardDirectMessage = sendPDU(destinationSocketNum, MULTI_CAST_FLAG, (uint8_t *)dataBuffer, messageLen);
 			if (forwardDirectMessage < 0)
 			{
@@ -158,7 +150,6 @@ void DirectMessage(uint8_t * dataBuffer, int messageLen, int clientSocket){
 		}
 	}
 	else{
-		printf("Destination handel Port: %d",destinationSocketNum);
 		int forwardDirectMessage = sendPDU(destinationSocketNum, INDIVIDUAL_PACKET_FLAG, (uint8_t *)dataBuffer, messageLen);
 		if (forwardDirectMessage < 0)
 		{
@@ -181,13 +172,11 @@ void confirmHandelName(int clientSocket, uint8_t * dataBuffer){
 	//store the data in the handelName
 	char handelNameProvided[sizeOfHandel];
 	memcpy(handelNameProvided,dataBuffer + sizeof(uint8_t), sizeOfHandel);
-	printString(handelNameProvided,sizeOfHandel);
 	
 	//look for the handel name and send the ack
 	int handelSocketCheck;
 	handelSocketCheck = getSocketNumber(handelNameProvided, sizeOfHandel);
 	if(handelSocketCheck == -1){
-		printf("can't find the handel in the list\n");
 		addNewHandle(handelNameProvided,clientSocket,sizeOfHandel);
 		int sendingFlag = sendPDU(clientSocket, GOOD_HANDEL_FLAG, (uint8_t *)handelNameProvided, 0);
 		if (sendingFlag < 0)
@@ -197,7 +186,6 @@ void confirmHandelName(int clientSocket, uint8_t * dataBuffer){
 		}
 	}
 	else{
-		printf("the handel already exist please try something else\n");
 		int sendingFlag = sendPDU(clientSocket, INIT_PACK_ERROR, (uint8_t *)handelNameProvided, 0);
 		if (sendingFlag < 0)
 		{
@@ -268,24 +256,26 @@ void ListRequest(int clientSocket, uint8_t * dataBuffer){
 
 /**
  * @brief
- * Broad cast the message to all the users logged in.
+ * Broad cast the message to all the users logged in (except the sender)
  * @param databuffer
  * @param messageLen
 */
-void processBroadCast(uint8_t * dataBuffer, int messageLen){
+void processBroadCast(uint8_t * dataBuffer, int messageLen, int client_socket){
 
 	uint32_t handlesCount = onlyHandelCount();
 	int HandlesSocket[handlesCount];	//get the socket of all the handles
 
 	HandlesSocketNum(HandlesSocket);	//get all the socket number for broadcasting
 	
-	//sending the message to all the sockets
+	//sending the message to all the sockets, except to the sender's socket
 	for(uint32_t i=0;i<handlesCount;i++){
-		int sendingFlag = sendPDU(HandlesSocket[i], BROADCAST_FLAG, dataBuffer, messageLen);
-		if (sendingFlag < 0)
-		{
-			perror("send call");
-			exit(-1);
+		if(HandlesSocket[i] != client_socket){
+			int sendingFlag = sendPDU(HandlesSocket[i], BROADCAST_FLAG, dataBuffer, messageLen);
+			if (sendingFlag < 0)
+			{
+				perror("send call");
+				exit(-1);
+			}
 		}
 	}
 	
@@ -294,6 +284,8 @@ void processBroadCast(uint8_t * dataBuffer, int messageLen){
 void existAndRemoveHandel(int clientSocket){
 	//removing the handel name from the handel list
 	removeHandleBySocket(clientSocket);
+	//remove the client from the socket-set
+	removeFromPollSet(clientSocket);
 	uint8_t exitBuffer[0];
 	int sendingFlag = sendPDU(clientSocket, ACK_EXIT_FLAG, exitBuffer, 0);
 	if (sendingFlag < 0)
@@ -338,7 +330,7 @@ void processClient(int clientSocket){
 		ListRequest(clientSocket, dataBuffer);
 	}
 	else if(flag == BROADCAST_FLAG){
-		processBroadCast(dataBuffer, messageLen);
+		processBroadCast(dataBuffer, messageLen, clientSocket);
 	}
 	else if(flag == EXIT_FLAG){
 		existAndRemoveHandel(clientSocket);
@@ -346,15 +338,16 @@ void processClient(int clientSocket){
 
 	if (messageLen > 0)
 	{
-		printf("Message received on socket: %u, Message Length: %d, Data: %s\n", clientSocket, messageLen, dataBuffer);
+		// printf("Message received on socket: %u, Message Length: %d, Data: %s\n", clientSocket, messageLen, dataBuffer);
 	}
 	else
 	{
-		printf("Connection closed by other side\n");
-		//close the socket connection b/w client and server
-		close(clientSocket);
 		//remove the client from the socket-set
 		removeFromPollSet(clientSocket);
+		//removing the handel name from the handel list
+		removeHandleBySocket(clientSocket);
+		//close the socket connection b/w client and server
+		close(clientSocket);
 	}
 }
 
@@ -381,25 +374,19 @@ void serverControl(int mainServerSocket, int clientSocket){
 
 int main(int argc, char *argv[])
 {
-
 	int clientSocket = 0;   //socket descriptor for the client socket
 	int mainServerSocket = 0;   //socket descriptor for the server socket
 	int portNumber = 0;
-	
 	portNumber = checkArgs(argc, argv);
-	
 	//create the server socket
 	mainServerSocket = tcpServerSetup(portNumber);
-
 	//setup the poll for the sockets
 	setupPollSet();
 	//adding the main server socket to the pollset:
 	addToPollSet(mainServerSocket);
-
 	while(1){
 		serverControl(mainServerSocket,clientSocket);
 	}
-	
 	return 0;
 }
 
