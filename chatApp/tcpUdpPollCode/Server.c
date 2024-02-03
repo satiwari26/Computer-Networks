@@ -232,6 +232,7 @@ void ListRequest(int clientSocket, uint8_t * dataBuffer){
 	for(int i=0; i<NumberOfHandels;i++){
 		memcpy(&currHandelLen, HandleNames +valOffset, sizeof(uint8_t));
 		uint8_t currHandleName[currHandelLen];
+		memset(currHandleName, 0, currHandelLen);
 		memcpy(&currHandleName, HandleNames +valOffset + sizeof(uint8_t), currHandelLen);
 		valOffset += (currHandelLen + sizeof(uint8_t));
 

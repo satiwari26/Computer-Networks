@@ -36,10 +36,6 @@ int cmpHandel(struct handleTable * table, char * handleN, uint8_t handelL){
     memcpy(newString,handleN,handelL);
     newString[handelL] = '\0';
 
-    // Print or debug to verify the content of the strings
-    printf("Existing: %s\n", existing);
-    printf("New String: %s\n", newString);
-
     if(strncmp(existing,newString, handelL) == 0){
         return 0;
     }
