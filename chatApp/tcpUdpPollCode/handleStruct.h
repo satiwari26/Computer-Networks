@@ -9,6 +9,17 @@
 
 /**
  * @brief
+ * node to store the handle table and sockeNumber
+*/
+struct handleTable{
+    char * handleName;
+    int handelLen;
+    int socket_number;
+    struct handleTable * next;
+};
+
+/**
+ * @brief
  * add new handle to the table
  * @param handleName    //need to ensure that handleName is store 
  *                      in an array somewhere before passed
@@ -68,3 +79,11 @@ void HandlesSocketNum(int * HandelsSocket);
  * @param socketNumber (for the comparison of the file)
 */
 void removeHandleBySocket(int sockeNumber);
+
+/**
+ * @brief
+ * provides the handles name and Handle size
+ * @param handlesBuffer
+ * @return handleTable *
+*/
+struct handleTable * HandleIndivs(uint8_t * handlesBuffer, struct handleTable * curr);

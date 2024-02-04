@@ -2,17 +2,6 @@
 
 /**
  * @brief
- * node to store the handle table and sockeNumber
-*/
-struct handleTable{
-    char * handleName;
-    int handelLen;
-    int socket_number;
-    struct handleTable * next;
-};
-
-/**
- * @brief
  * global header pointer that would point to the starting of the header if
  * first node is present otherwise null
 */
@@ -27,7 +16,7 @@ int cmpHandel(struct handleTable * table, char * handleN, uint8_t handelL){
     if(table->handelLen != handelL){
         return -1;
     }
-    printf("%s",table->handleName);
+    // printf("%s",table->handleName);
     char existing[table->handelLen + 1];
     char newString[handelL + 1];
     memcpy(existing,table->handleName,table->handelLen);
@@ -90,7 +79,6 @@ void removeHandle(char * handleName, uint8_t handelLen){
     memcpy(handelArray,handleName,handelLen);
     handelArray[handelLen] = '\0';
 
-    bool existHandle = false;
     if(handleHeader == NULL){
         printf("Error there are no clients on the handle");
         return;
@@ -102,13 +90,11 @@ void removeHandle(char * handleName, uint8_t handelLen){
             if(curr == handleHeader){   //if the curr pointer is header move header to next
                 handleHeader = curr->next;
                 free(curr); //remove the current node from the link
-                existHandle = true;
                 break;
             }
             else{
                 prev->next = curr->next;
                 free(curr);
-                existHandle = true;
                 break;
             }
         }
@@ -116,7 +102,6 @@ void removeHandle(char * handleName, uint8_t handelLen){
         curr = curr->next;
     }while(curr != NULL);
 
-    existHandle == false ? printf("The handle doesn't exist\n") : printf("The handle have been deleted\n");
 }
 
 
@@ -126,7 +111,6 @@ void removeHandle(char * handleName, uint8_t handelLen){
  * @param socketNumber (for the comparison of the file)
 */
 void removeHandleBySocket(int sockeNumber){
-    bool existHandle = false;
     if(handleHeader == NULL){
         printf("Error there are no clients on the handle");
         return;
@@ -138,13 +122,11 @@ void removeHandleBySocket(int sockeNumber){
             if(curr == handleHeader){   //if the curr pointer is header move header to next
                 handleHeader = curr->next;
                 free(curr); //remove the current node from the link
-                existHandle = true;
                 break;
             }
             else{
                 prev->next = curr->next;
                 free(curr);
-                existHandle = true;
                 break;
             }
         }
@@ -152,7 +134,6 @@ void removeHandleBySocket(int sockeNumber){
         curr = curr->next;
     }while(curr != NULL);
 
-    existHandle == false ? printf("The handle doesn't exist\n") : printf("The handle have been deleted\n");
 }
 
 
@@ -173,7 +154,7 @@ int getSocketNumber(char * handleName, uint8_t handelLen){
     }
 
     while(curr != NULL){
-        printf("%s\n",curr->handleName);
+        // printf("%s\n",curr->handleName);
         if(cmpHandel(curr,handelArray, handelLen) == 0){
             return curr->socket_number;
         }
@@ -272,4 +253,24 @@ void HandlesSocketNum(int * HandelsSocket){
         curr = curr->next;
         HandlesCounts++;
     }
+}
+/**
+ * @brief
+ * provides the handles name and Handle size
+ * @param handlesBuffer
+ * @return handleTable *
+*/
+struct handleTable * HandleIndivs(uint8_t * handlesBuffer, struct handleTable * curr){
+    if(curr == NULL){
+        curr = handleHeader;
+    }
+
+    if(curr == NULL){
+        handlesBuffer = NULL;
+        return NULL;
+    }
+
+    memcpy(&handlesBuffer[0],&curr->handelLen,sizeof(uint8_t));
+    memcpy(&handlesBuffer[sizeof(uint8_t)],curr->handleName, curr->handelLen);
+    return curr->next;
 }

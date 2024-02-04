@@ -21,6 +21,7 @@
 #include <netdb.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #include "networks.h"
 #include "safeUtil.h"
@@ -28,7 +29,7 @@
 #include "pollLib.h"
 #include "recvPDU.h"
 
-#define MAXBUF 500
+#define MAXBUF 1400
 #define DEBUG_FLAG 1
 #define MAX_HANDLE_SIZE 100
 #define CLIENT_INIT_FLAG 1
@@ -74,7 +75,7 @@ int min(int x, int y) {
  * takes in the server socketNum
 */
 void processStdin(int socketNum, char * argv[]){
-	uint8_t sendBuf[MAXBUF];   //data buffer
+	uint8_t sendBuf[MAXBUF + 3];   //data buffer
 	int sendLen = 0;        //amount of data to send
 	int sent = 0;            //actual amount of data sent/* get the data and send it*/
 
@@ -106,18 +107,22 @@ void processStdin(int socketNum, char * argv[]){
 	//for directMessage handelName
 	char destHandleName[MAX_HANDLE_SIZE];
 	//creating 9 different static array for multicast handling
-	char destHandleName1[9][MAX_HANDLE_SIZE];	//9 array of size max_handel_size 
+	char destHandleName1[9][MAX_HANDLE_SIZE] = {{'\0'},{'\0'},{'\0'},{'\0'},{'\0'},{'\0'},{'\0'},{'\0'},{'\0'}};	//9 array of size max_handel_size 
 	uint8_t destHandleNameLenghts1[9];	//to store the length of 
 	
 	if(strcmp(messageCommands, "%M") == 0 || strcmp(messageCommands, "%m") == 0){	//sending individual message
-		sscanf((char *)sendBuf, "%s %s",messageCommands,destHandleName);
+		int scanVal = sscanf((char *)sendBuf, "%s %s",messageCommands,destHandleName);
+		if(scanVal < 2){
+			printf("\nThe Handle Name is incorrect, please try again!\n");
+			return;
+		}
 		singleDesHeader->destHandelLen = strlen(destHandleName);	//destination handel name length
 
 		singleDesHeader->destinationHandels = 1;	//hard set to one in single message sending
 	}
 	else if(strcmp(messageCommands, "%C") == 0 || strcmp(messageCommands, "%c") == 0){	//sending multicasting message
 		//store the 9 elements handelName
-		sscanf((char *)sendBuf, "%s %hhu %s %s %s %s %s %s %s %s %s",
+		int scanVal = sscanf((char *)sendBuf, "%s %hhu %s %s %s %s %s %s %s %s %s",
                                               messageCommands,
 											  &singleDesHeader->destinationHandels,
                                               destHandleName1[0],
@@ -130,8 +135,18 @@ void processStdin(int socketNum, char * argv[]){
                                               destHandleName1[7],
                                               destHandleName1[8]);
 		//get the size of the each handel Name:
+		if(scanVal <= 2){
+			printf("\nThe Handle Name is incorrect, please try again!\n");
+			return;
+		}
+		
 		if(singleDesHeader->destinationHandels >= 2 && singleDesHeader->destinationHandels <= 9){
 			for(int i=0; i<singleDesHeader->destinationHandels;i++){
+				if(destHandleName1[i][0] == '\0'){	//case when user doesn't enter the right handle name
+					printf("\nThe Handle Names are incorrect, please try again\n");
+					return;
+				}
+
 				destHandleNameLenghts1[i] = strlen(destHandleName1[i]);
 			}
 		}
@@ -286,8 +301,6 @@ void processStdin(int socketNum, char * argv[]){
 				dynamicPackageBuff += destHandleNameLenghts1[t];
 			}
 
-			// memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t), &singleDesHeader->destHandelLen, sizeof(uint8_t));
-			// memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t), destHandleName, singleDesHeader->destHandelLen);
 			memcpy(packageBuff + dynamicPackageBuff, messageBuff, sizeof(uint8_t));
 			sent =  sendPDU(socketNum, MULTI_CAST_FLAG, packageBuff, packagesLength);
 			if (sent < 0)
@@ -320,8 +333,6 @@ void processStdin(int socketNum, char * argv[]){
 				dynamicPackageBuff += destHandleNameLenghts1[t];
 			}
 
-			// memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t), &singleDesHeader->destHandelLen, sizeof(uint8_t));
-			// memcpy(packageBuff + sizeof(uint8_t) + singleDesHeader->senderHandelLen + sizeof(uint8_t) + sizeof(uint8_t), destHandleName, singleDesHeader->destHandelLen);
 			messageBuff[sendermessageLength] = '\0';
 			memcpy(packageBuff + dynamicPackageBuff, messageBuff, sendermessageLength);
 			sent =  sendPDU(socketNum, MULTI_CAST_FLAG, packageBuff, packagesLength);
@@ -568,7 +579,8 @@ void processBroadCastMessage(uint8_t * dataBuffer, int messageLen){
 
 	int dataLen = messageLen - sizeof(uint8_t) - directMessageHead->senderHandelLen;
 
-	uint8_t message[dataLen]; 
+	uint8_t message[dataLen + sizeof(uint8_t)]; 
+	message[dataLen] = '\0';
 	memcpy(message,dataBuffer + sizeof(uint8_t) + directMessageHead->senderHandelLen,dataLen);
 
 	printf("\n%s: %s\n",senderHandelName, message);
@@ -774,6 +786,11 @@ void checkArgs(int argc, char * argv[])
 
 	if(sizeof(argv[1]) > MAX_HANDLE_SIZE){
 		printf("Error: The Handle Name is too long: \n Current provided name: %s\n",argv[1]);
+		exit(-1);
+	}
+
+	if(isdigit(argv[1][0])){
+		printf("Error: The Handle name can't start with a number.\n");
 		exit(-1);
 	}
 }

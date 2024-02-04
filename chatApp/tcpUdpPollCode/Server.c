@@ -28,7 +28,7 @@
 #include "pollLib.h"
 #include "handleStruct.h"
 
-#define MAXBUF 1024
+#define MAXBUF 1400
 #define DEBUG_FLAG 1
 #define GOOD_HANDEL_FLAG 2
 #define INIT_PACK_ERROR 3
@@ -207,9 +207,8 @@ void confirmHandelName(int clientSocket, uint8_t * dataBuffer){
 */
 void ListRequest(int clientSocket, uint8_t * dataBuffer){
 	uint32_t NumberOfHandels = 0;	//to store the number of the handles present
-	uint8_t HandleNames[MAXBUF];	//to store the handle Names
-	//get the handle names and number of handles
-	NumberOfHandels = HandlesCount(HandleNames);
+	uint8_t HandleNames[MAX_HANDLE_SIZE];	//to store the handle Names
+	NumberOfHandels = onlyHandelCount();
 
 
 	//sending the number of handles back to client with flag 11
@@ -227,14 +226,13 @@ void ListRequest(int clientSocket, uint8_t * dataBuffer){
 	}
 
 	//send the handel name with flag
-	int valOffset = 0;
+	struct handleTable * curr = NULL;
 	uint8_t currHandelLen;
 	for(int i=0; i<NumberOfHandels;i++){
-		memcpy(&currHandelLen, HandleNames +valOffset, sizeof(uint8_t));
+		curr = HandleIndivs(HandleNames, curr);
+		memcpy(&currHandelLen, HandleNames, sizeof(uint8_t));
 		uint8_t currHandleName[currHandelLen];
-		memset(currHandleName, 0, currHandelLen);
-		memcpy(&currHandleName, HandleNames +valOffset + sizeof(uint8_t), currHandelLen);
-		valOffset += (currHandelLen + sizeof(uint8_t));
+		memcpy(&currHandleName, HandleNames + sizeof(uint8_t), currHandelLen);
 
 		uint8_t handelNamesBuffer[currHandelLen + sizeof(uint8_t)];
 		memcpy(handelNamesBuffer, &currHandelLen, sizeof(uint8_t));
