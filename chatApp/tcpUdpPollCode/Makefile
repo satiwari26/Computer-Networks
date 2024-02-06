@@ -1,5 +1,5 @@
-# Makefile for CPE464 tcp test code
-# written by Hugh Smith - April 2019
+# Makefile for CPE464 tcp chat application
+# written by Saumitra Tiwari - Feb 2024
 
 CC= gcc
 CFLAGS= -g -Wall -std=gnu99

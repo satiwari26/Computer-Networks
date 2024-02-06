@@ -8,5 +8,5 @@ Lab Section: After-Noon, 3pm
 - make
 
 ## Execute server and client
-./Server
-./cClient localhost <server port #>
+./server
+./cclient localhost <server port #>
