@@ -58,6 +58,6 @@ void printPDU(uint8_t *aPDU, int pduLength){
     printf("Sequence Number: %d\n", sequenceNumber_HO);
     printf("Flag: %d\n", flag);
     printf("Payload: %s\n",payloadData);
-    printf("Payload Length: %d",payLoadLen);
+    printf("Payload Length: %d\n",payLoadLen);
     fflush(stdout);
 }

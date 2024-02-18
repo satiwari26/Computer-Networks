@@ -1,5 +1,5 @@
-// Client side - UDP Code				    
-// By Hugh Smith	4/1/2017		
+// // Client side - UDP Code				    
+// // By Hugh Smith	4/1/2017		
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +36,7 @@ int main (int argc, char *argv[])
 	
 	portNumber = checkArgs(argc, argv, &errorRate);
 	
-	socketNum = setupUdpClientToServer(&server, argv[1], portNumber);
+	socketNum = setupUdpClientToServer(&server, argv[2], portNumber);
 	
 	talkToServer(socketNum, &server);
 	
@@ -67,7 +67,7 @@ void talkToServer(int socketNum, struct sockaddr_in6 * server)
 		//verifying the pdu packet
 		printPDU(pduBuffer, pduLength);
 		//sending the pduPacket to the server
-		safeSendto(socketNum, pduBuffer, pduLength, 0, (struct sockaddr *) server, serverAddrLen);
+		int val = safeSendto(socketNum, pduBuffer, pduLength, 0, (struct sockaddr *) server, serverAddrLen);
 		
 		safeRecvfrom(socketNum, buffer, MAXBUF, 0, (struct sockaddr *) server, &serverAddrLen);
 		
@@ -122,8 +122,3 @@ int checkArgs(int argc, char * argv[],  float *errorRate)
 		
 	return portNumber;
 }
-
-
-
-
-

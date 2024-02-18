@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/home/chero/Networks/tcpUdpCode_v2/rcopy",
-            "args": ["0.1","localhost","35000"],
+            "args": ["0.1","localhost","3500"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

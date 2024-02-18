@@ -27,7 +27,6 @@ int main ( int argc, char *argv[]  )
 	float errorRate = 0;
 
 	portNumber = checkArgs(argc, argv, &errorRate);
-		
 	socketNum = udpServerSetup(portNumber);
 
 	processClient(socketNum);
