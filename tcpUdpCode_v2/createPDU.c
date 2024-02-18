@@ -1,12 +1,12 @@
 #include "createPDU.h"
 
 
-int createPDU(uint8_t *pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_t * payload, int payLoadLen){
+int createPDU(uint8_t **pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_t * payload, int payLoadLen){
 
     //pduLength = (4 bytes for sequence num) + (2-bytes for checksum) + (1-byte for flag) + (payloadLen)
     int pduLength = sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t) + payLoadLen;
     //dynamically create the pduBuffer
-    pduBuffer = (uint8_t*)malloc(pduLength);
+    *pduBuffer = (uint8_t*)malloc(pduLength);
     uint8_t pduBuff1[pduLength];
 
     uint16_t checkSum = 0;  //initially setting this to 0
@@ -17,24 +17,26 @@ int createPDU(uint8_t *pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_t
     memcpy(pduBuff1 + sizeof(uint32_t) + sizeof(uint16_t), &flag, sizeof(uint8_t));
     memcpy(pduBuff1 + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), payload, payLoadLen);
 
-    memcpy(pduBuffer,pduBuff1,pduLength);
+    memcpy(*pduBuffer,pduBuff1,pduLength);
 
     //running the checksum on the pdu packet
-    checkSum = in_cksum((uint16_t *)pduBuffer, pduLength);
+    checkSum = in_cksum((uint16_t *)pduBuff1, pduLength);
 
     //putting the new checksum value in the packet in the NO
-    uint16_t checkSum_NO = htons(checkSum);
-    memcpy(pduBuffer + sizeof(uint32_t), &checkSum_NO, sizeof(uint16_t));
+    memcpy(pduBuff1 + sizeof(uint32_t), &checkSum, sizeof(uint16_t));
+
+    //setting the buffer to passed in buffer
+    memcpy(*pduBuffer,pduBuff1,pduLength);
 
     return pduLength;
 }
 
 void printPDU(uint8_t *aPDU, int pduLength){
-    uint32_t sequenceNumber_NO;
-    uint32_t sequenceNumber_HO;
+    uint32_t sequenceNumber_NO = 0;
+    uint32_t sequenceNumber_HO = 0;
 
-    uint16_t checkSum;
-    uint8_t flag;
+    uint16_t checkSum = 0;
+    uint8_t flag = 0;
     int payLoadLen = pduLength - sizeof(uint32_t) - sizeof(uint16_t) - sizeof(uint8_t);
     uint8_t payloadData[payLoadLen + 1];    //extra bytes to add the null terminated char
     payloadData[payLoadLen] = '\0';
@@ -57,5 +59,5 @@ void printPDU(uint8_t *aPDU, int pduLength){
     printf("Flag: %d\n", flag);
     printf("Payload: %s\n",payloadData);
     printf("Payload Length: %d",payLoadLen);
-
+    fflush(stdout);
 }

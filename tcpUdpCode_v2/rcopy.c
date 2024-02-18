@@ -63,7 +63,7 @@ void talkToServer(int socketNum, struct sockaddr_in6 * server)
 		printf("Sending: %s with len: %d\n", buffer,dataLen);
 
 		//creating the pdu packet
-		int pduLength = createPDU(pduBuffer, sequenceNumber, flag, (uint8_t *)buffer, dataLen);
+		int pduLength = createPDU(&pduBuffer, sequenceNumber, flag, (uint8_t *)buffer, dataLen);
 		//verifying the pdu packet
 		printPDU(pduBuffer, pduLength);
 		//sending the pduPacket to the server
