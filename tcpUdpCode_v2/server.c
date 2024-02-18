@@ -14,6 +14,7 @@
 #include "networks.h"
 #include "safeUtil.h"
 #include "createPDU.h"
+#include "cpe464.h"
 
 #define MAXBUF 1400
 
@@ -27,6 +28,8 @@ int main ( int argc, char *argv[]  )
 	float errorRate = 0;
 
 	portNumber = checkArgs(argc, argv, &errorRate);
+	sendErr_init(errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_OFF);
+	
 	socketNum = udpServerSetup(portNumber);
 
 	processClient(socketNum);
@@ -47,10 +50,6 @@ void processClient(int socketNum)
 	while (buffer[0] != '.')
 	{
 		dataLen = safeRecvfrom(socketNum, buffer, MAXBUF, 0, (struct sockaddr *) &client, &clientAddrLen);
-	
-		printf("Received message from client with ");
-		printIPInfo(&client);
-		printf(" Len: %d \'%s\'\n", dataLen, buffer);
 
 		//verifying the pduPacket received from the client
 		printPDU((uint8_t *)buffer, dataLen);
