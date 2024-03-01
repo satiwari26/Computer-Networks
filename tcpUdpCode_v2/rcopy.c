@@ -34,6 +34,12 @@ int main (int argc, char *argv[])
 	struct sockaddr_in6 server;		// Supports 4 and 6 but requires IPv6 struct
 	int portNumber = 0;
 	float errorRate = 0;
+	char * from_fileName;
+	char * to_fileName;
+	uint32_t window_size;
+	uint32_t buffer_size;
+	char * remote_machine;
+
 	
 	portNumber = checkArgs(argc, argv, &errorRate);
 	sendErr_init(errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_OFF);
@@ -113,7 +119,7 @@ int checkArgs(int argc, char * argv[],  float *errorRate)
 	int portNumber = 0;
 	
 	/* check command line arguments  */
-	if (argc != 4)
+	if (argc != 8)
 	{
 		printf("usage: %s host-name port-number \n", argv[0]);
 		exit(1);

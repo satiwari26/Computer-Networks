@@ -5,7 +5,7 @@ CC = gcc
 CFLAGS = -g -Wall
 
 # List of object files
-OBJS = networks.o gethostbyname.o pollLib.o safeUtil.o createPDU.o
+OBJS = networks.o gethostbyname.o pollLib.o safeUtil.o createPDU.o window.o
 
 # Uncomment next two lines if you're using sendtoErr() library
 LIBS += libcpe464.2.21.a -lstdc++ -ldl
@@ -18,6 +18,10 @@ tcpAll: myClient myServer
 
 # Compile createPDU.c to create createPDU.o
 createPDU.o: createPDU.c createPDU.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile window.c to create window.o
+window.o: window.c window.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Build rcopy executable, linking with createPDU.o
