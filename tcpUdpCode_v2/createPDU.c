@@ -1,4 +1,5 @@
 #include "createPDU.h"
+#include "window.h"
 
 
 int createPDU(uint8_t **pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_t * payload, int payLoadLen){
@@ -60,4 +61,13 @@ void printPDU(uint8_t *aPDU, int pduLength){
     printf("Payload: %s\n",payloadData);
     printf("Payload Length: %d\n",payLoadLen);
     fflush(stdout);
+}
+
+void extractFirstFilePacket(uint8_t * buffer, int payloadLen){
+    memcpy(&globalServerBuffer.serverWindowSize,buffer, sizeof(uint32_t));
+    memcpy(&globalServerBuffer.serverBufferSize, buffer + sizeof(uint32_t), sizeof(uint16_t));
+
+    int toFileNameLen = payloadLen - sizeof(uint32_t) - sizeof(uint16_t);
+    globalServerBuffer.toFileName = (char *)malloc(toFileNameLen);
+    memcpy(&globalServerBuffer.toFileName, buffer + sizeof(uint32_t) + sizeof(uint16_t), toFileNameLen);
 }

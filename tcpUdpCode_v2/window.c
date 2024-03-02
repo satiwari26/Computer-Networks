@@ -1,5 +1,9 @@
 #include"window.h"
 
+// Define global variables
+struct windowVars globalWindow;
+struct serverBuffer globalServerBuffer;
+
 //-------------------Window functions---------------------------------//
 
 void init(){
@@ -17,6 +21,7 @@ void init(){
 
 //packet-size needs to be constant in all packets make sure sending the same packetsize in each function call
 void addPacket(uint8_t * packetPdu, uint8_t packetSize){
+    packetSize = globalWindow.packetSize;
     uint32_t sequenceNumber_NO;
     memcpy(&sequenceNumber_NO, packetPdu, sizeof(uint32_t));
     uint32_t sequenceNumber_HO = ntohl(sequenceNumber_NO);

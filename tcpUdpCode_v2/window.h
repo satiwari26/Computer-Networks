@@ -1,3 +1,6 @@
+#ifndef WINDOW_H
+#define WINDOW_H
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -19,13 +22,14 @@
 
 //pointers to keep track where my upper, current and lower are for window buffer
 struct windowVars{
-    uint32_t windowSize;    //to create the window buffer of size windowSizeSSS
+    uint32_t windowSize;    //to create the window buffer of size windowSize
+    uint16_t packetSize;
     uint8_t **windowBuffer; //window buffer to hold the packets
     uint32_t upper;
     uint32_t lower;
     uint32_t current;
 };
-struct windowVars globalWindow;
+extern struct windowVars globalWindow;
 
 
 //-----window functions ----------
@@ -83,9 +87,10 @@ struct serverBuffer{
     uint32_t serverWindowSize;  //the first packet also contains this information
     uint8_t **ServerBuffer; //Server buffer to hold the packets that are received later
     uint8_t * validationBuffer;
+    char * toFileName;  //to store the 
 };
 
-struct serverBuffer globalServerBuffer;
+extern struct serverBuffer globalServerBuffer;
 
 /**
  * @brief
@@ -122,3 +127,5 @@ void printServerEntireWindow();
  * to get the specific packet form the buffer
 */
 uint8_t * getServerPacket(uint32_t sequenceNumber);
+
+#endif

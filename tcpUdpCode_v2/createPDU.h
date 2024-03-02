@@ -35,3 +35,9 @@ int createPDU(uint8_t **pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_
  * Verifies that the packet data is not corrupted and checksum is also correct
 */
 void printPDU(uint8_t *aPDU, int pduLength);
+
+/**
+ * @brief
+ * extracting the file-name, window-size, buffer-size
+*/
+void extractFirstFilePacket(uint8_t * buffer, int payloadLen);
