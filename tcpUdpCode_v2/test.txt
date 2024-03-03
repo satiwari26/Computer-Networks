@@ -1,1 +1,11 @@
 hello world this is saumitra tiwari this thing is for the testing purpose and what we want to do with this thing.
+
+Yes, your implementation seems reasonable. When the processClient function receives 
+data from the socket and forks a child process, the child process will close the 
+original socket descriptor using close(setup.socketNum) and then proceed to execute the 
+processState function. This pattern is commonly used in network server programs where each client connection is handled by a separate child process.
+
+However, make sure to handle errors properly, especially the 
+case when fork() fails (pid < 0). In your code, you're printing an error 
+message, but you may want to consider whether to exit the child process or 
+continue the loop in the parent process, depending on your application logic.

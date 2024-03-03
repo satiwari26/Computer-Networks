@@ -217,6 +217,19 @@ STATE inorder(){
 
 					return DONE;
 				}
+				else if(dataPacketReceivedSize == 8){	//case when a EOF needs to be send seperately
+					 printServerPacket(dataPacketReceived);	//print the receive packet in the data
+					//update the highest to the expected
+					globalServerBuffer.highest = globalServerBuffer.expected;
+					globalServerBuffer.expected++;
+
+					//create and send the rr packet with END of FILE flag
+					int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
+					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+					setup.serverSequenceNumber++;
+
+					return DONE;
+				}
 			}
 		}
 		//if receive is lower than expected
@@ -358,14 +371,17 @@ void processClient(int socketNum, char *argv[])
 		// pid = fork();
 		// if(pid < 0){
 		// 	printf("forking for the child process failed\n");
+		// 	exit(EXIT_FAILURE);
 		// }
 		// else if(pid == 0){
 			//child process
 			close(setup.socketNum);	//close the original socket for the child
 			processState(argv);
+		// 	exit(EXIT_SUCCESS);
 		// }
 
-
+	}
+}
 
 		//verifying the pduPacket received from the client
 		// printPDU((uint8_t *)buffer, dataLen);
@@ -373,9 +389,6 @@ void processClient(int socketNum, char *argv[])
 		// just for fun send back to client number of bytes received
 		// sprintf(buffer, "bytes: %d", dataLen);
 		// safeSendto(socketNum, buffer, strlen(buffer)+1, 0, (struct sockaddr *) & client, clientAddrLen);
-
-	}
-}
 
 int checkArgs(int argc, char *argv[])
 {
