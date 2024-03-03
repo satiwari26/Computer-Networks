@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <stdbool.h>
 
 #include "gethostbyname.h"
 #include "networks.h"
@@ -34,11 +35,15 @@
 #define FILE_NAME_PACKET 8
 #define RESPONSE_FLAG_NAME 9
 #define FILE_OPENING_FAIL 10
+#define END_OF_FILE_FLAG 11
+
+//data_packet_size_received
+#define data_packet_size_received 11
 
 typedef enum State STATE;
 
 enum State{
-	START_STATE, FILENAME, FILE_OK, DONE,
+	START_STATE, FILENAME, FILE_OK, END_OF_FILE, DONE,
 };
 
 struct setUpStruct{
@@ -65,7 +70,7 @@ STATE fileName(int firstPacketSize, char *argv[]);
 STATE file_ok();
 STATE done();
 void processState(char *argv[]);
-int createInitialPacket(int sequenceNumber);
+int createInitialPacket(int sequenceNumber, int flag);
 
 
 int main (int argc, char *argv[])
@@ -102,7 +107,11 @@ void processState(char *argv[]){
 			break;
 
 			case FILE_OK:
-			
+				state = file_ok();
+			break;
+
+			case END_OF_FILE:
+				
 			break;
 
 			case DONE:
@@ -120,7 +129,7 @@ FILE * getFile(char * fromFileName){
 	FILE * filePointer = NULL;
 
 	// Open the file in read mode
-    filePointer = fopen(fromFileName, "r");
+    filePointer = fopen(fromFileName, "rb");
 
 	if(filePointer == NULL){
 		printf("Specified file or filename not found");
@@ -128,6 +137,88 @@ FILE * getFile(char * fromFileName){
 	}
 
 	return filePointer;
+}
+
+STATE file_ok(){
+	//initialize my window api
+	init();
+
+	uint8_t tempBuffer[globalWindow.packetSize];
+	uint16_t bytesRead;
+	bool sendEOF = false;
+	int serverAddrLen = sizeof(struct sockaddr_in6);
+	uint8_t bufferData[11];
+
+	while (1) {
+		//while window is open
+		while(globalWindow.current != globalWindow.upper){
+			//read from the file
+			bytesRead = fread(tempBuffer, 1, globalWindow.packetSize, setup.filePointer);
+			if(bytesRead == 0){
+				break;
+			}
+			//create and send the packet, add it to buffer
+				if(setup.setUpPacket != NULL){
+					//if there exist a packet free it
+					free(setup.setUpPacket);
+				}
+				//not the last packet
+				if(bytesRead == globalWindow.packetSize){
+					int pduPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, REGULAR_DATA_PACKET, tempBuffer, globalWindow.packetSize);
+					//send this packet
+					safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+
+					//add the packet to the buffer
+					addPacket(setup.setUpPacket, 7 + globalWindow.packetSize);	//7 bytes for the header size
+					setup.clientSequenceNumber++;
+					//update the current pointer
+					globalWindow.current++;
+				}
+				//last packet with less than expected val
+				else if(bytesRead < globalWindow.packetSize){
+					int pduPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, tempBuffer, bytesRead);
+					//send this packet
+					safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+
+					//add the packet to the buffer
+					addPacket(setup.setUpPacket, 7 + bytesRead);	//7 bytes for the header size
+					setup.clientSequenceNumber++;
+					//set sendEOF to true since we send it aready and no need to send extra packet
+					sendEOF = true;
+					//update the current pointer
+					globalWindow.current++;
+				}
+
+			//receive the RR's or SREJ
+			int socketVal = pollCall(0);
+			while(socketVal > -1){
+				int dataLen = safeRecvfrom(socketVal, bufferData, MAXBUF, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+
+				printf("received data packet from the server %d\n",dataLen);
+			}
+		}
+
+		//last packet read,
+		if(bytesRead == 0){
+			break;
+		}
+    }
+
+	if(sendEOF == false){	//if we didn't send the last packet, send an extra packet to notify the server
+		uint8_t updatedTempBuffer[1];	//to store one null char as part of the pdu
+		updatedTempBuffer[0] = '\0';
+		if(setup.setUpPacket != NULL){
+			//if there exist a packet free it
+			free(setup.setUpPacket);
+		}
+		createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, updatedTempBuffer, sizeof(uint8_t));
+		//send this packet
+		// -------//
+		setup.clientSequenceNumber++;
+		addPacket(setup.setUpPacket, 8);
+	}
+
+	return DONE;
 }
 
 STATE fileName(int firstPacketSize, char *argv[]){
@@ -171,6 +262,13 @@ STATE fileName(int firstPacketSize, char *argv[]){
 			}
 			else{
 				setup.packetCounter++;
+				//create new packet with the updated sequence number
+				firstPacketSize = createInitialPacket(setup.clientSequenceNumber, FILE_NAME_PACKET);
+
+				if(flag == FILE_OPENING_FAIL){
+					printf("\n\nServer failed to open the file on their end.\n\n");
+					fflush(stdout);
+				}
 			}
 		}
 		else{
@@ -185,19 +283,15 @@ STATE fileName(int firstPacketSize, char *argv[]){
 			addToPollSet(setup.socketNum);
 
 			//create new packet with the updated sequence number
-			firstPacketSize = createInitialPacket(setup.clientSequenceNumber);
+			firstPacketSize = createInitialPacket(setup.clientSequenceNumber, FILE_NAME_PACKET);
 		}
 	}
 
 	setup.packetCounter = 0;
-
-	//temp 
-	fclose(setup.filePointer);
-
-	return DONE;
+	return FILE_OK;
 }
 
-int createInitialPacket(int sequenceNumber){
+int createInitialPacket(int sequenceNumber, int flag){
 	if(setup.setUpPacket != NULL){	//if there is already setUp packet created remove it
 		free(setup.setUpPacket);
 	}
@@ -209,7 +303,7 @@ int createInitialPacket(int sequenceNumber){
 	memcpy(tempPDUPacket + sizeof(uint32_t) + sizeof(uint16_t), (uint8_t *)setup.to_fileName, strlen(setup.to_fileName));
 
 	//setting up the initial packet to send it to the server (return packet size should be payloadLength + 7 bits)
-	int firstPacketSize =  createPDU(&setup.setUpPacket, sequenceNumber, FILE_NAME_PACKET, tempPDUPacket, payloadLength);
+	int firstPacketSize =  createPDU(&setup.setUpPacket, sequenceNumber, flag, tempPDUPacket, payloadLength);
 	free(tempPDUPacket);	//free temp PDU packet
 
 	return firstPacketSize;
@@ -228,7 +322,7 @@ STATE start_state(int * firstPacketSize){
 		return DONE;
 	}
 
-	*firstPacketSize = createInitialPacket(setup.clientSequenceNumber);
+	*firstPacketSize = createInitialPacket(setup.clientSequenceNumber, FILE_NAME_PACKET);
 
 	if(*firstPacketSize <= 7){
 		printf("The first packet size is not correct\n");

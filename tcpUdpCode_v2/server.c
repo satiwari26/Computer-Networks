@@ -45,7 +45,7 @@ struct setUpPacketInfo{
 typedef enum State STATE;
 
 enum State{
-	START_STATE, FILENAME, INORDER, BUFFER, FLUSHING, DONE,
+	START_STATE, INORDER, BUFFER, FLUSHING, DONE,
 };
 
 struct setUpPacketInfo setup;
@@ -54,7 +54,6 @@ struct setUpPacketInfo setup;
 void processState(char *argv[]);
 int createInitialPacket(int sequenceNumber, int flag);
 STATE start_state(int * firstPacketSize);
-STATE fileName();
 STATE inorder();
 STATE buffer();
 STATE flushing();
@@ -63,6 +62,10 @@ STATE done();
 void processClient(int socketNum, char *argv[]);
 int checkArgs(int argc, char *argv[]);
 FILE * getFile(char * fromFileName, int fileNameSize);
+
+//create RR or SREJ packets method
+int create_RR(uint32_t sequenceNumber);
+int create_SREJ(uint32_t sequenceNumber);
 
 int main ( int argc, char *argv[]  )
 { 
@@ -88,7 +91,7 @@ FILE * getFile(char * toFileName, int fileNameSize){
 	printf("fileName: %s\n",toFileName);
 
 	// Open the file in read mode
-    filePointer = fopen(toFileName, "w");
+    filePointer = fopen(toFileName, "a");
 
 	if(filePointer == NULL){
 		printf("Specified file or filename not found");
@@ -113,6 +116,52 @@ int createInitialPacket(int sequenceNumber, int flag){
 	return firstPacketSize;
 }
 
+STATE inorder(){
+	//the expected dataPacketSize is buffer size + header size
+	uint16_t dataPacketExpectedSize = globalServerBuffer.serverBufferSize + 7;
+	//buffer to store the data packets
+	uint8_t dataPacketReceived[dataPacketExpectedSize];
+	uint8_t payloadData[globalServerBuffer.serverBufferSize + 1];
+	payloadData[globalServerBuffer.serverBufferSize] = '\0';
+	while(1){
+		pollCall(10000);	//poll for 10 seconds and start 
+		//the receive size for each packet has standard of user entered server Buffer size
+		uint16_t dataPacketReceivedSize = safeRecvfrom(setup.socketNum, dataPacketReceived, dataPacketExpectedSize, 0, (struct sockaddr *) &setup.client, &setup.clientAddrLen);
+
+		//perform the checksum on the received data
+		uint16_t checkSum = in_cksum((uint16_t*)dataPacketReceived, dataPacketReceivedSize);
+		if(checkSum != 0){
+			printf("Checksum failed drop this packet.\n\n");
+		}
+		uint32_t tempReceive_HO = 0;
+		memcpy(&tempReceive_HO, dataPacketReceived, sizeof(uint32_t));
+
+		//convert the receive network sequence number to host order
+		globalServerBuffer.receive = ntohl(tempReceive_HO);
+
+		if(globalServerBuffer.receive == globalServerBuffer.expected){
+			//write the packet to opened file
+			memcpy(payloadData, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
+			size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
+			if(bytesWritten != globalServerBuffer.serverBufferSize){
+				printf("Error writing data in the disk.\n");
+			}
+			fflush(setup.toFilePointer);
+
+			printServerPacket(dataPacketReceived);	//print the receive packet in the data
+			//update the highest to the expected
+			globalServerBuffer.highest = globalServerBuffer.expected;
+			globalServerBuffer.expected++;
+
+			//create and send the rr packet
+
+		}
+		else{
+			printf("Received the non-expected sequence number\n\n");
+		}
+	}
+}
+
 STATE start_state(int * firstPacketSize){
 
 	uint8_t tempDataPacket[setup.firstPacketdataLen];
@@ -121,6 +170,13 @@ STATE start_state(int * firstPacketSize){
 	uint16_t checksum = in_cksum((uint16_t*)tempDataPacket, setup.firstPacketdataLen);
 	uint8_t flag;
 	memcpy(&flag, tempDataPacket + sizeof(uint32_t) + sizeof(uint16_t) ,sizeof(uint8_t));
+
+	//extracting the rcopy sequence number
+	uint32_t clientSequenceNumber = 0;
+	memcpy(&clientSequenceNumber, setup.receivedSetUpPacket, sizeof(uint32_t));
+
+	//set the expected to current sequence number + 1
+	globalServerBuffer.expected = ntohl(clientSequenceNumber) + 1;
 
 	//if the flag is not the FILE_NAME_PACKET or checksum fails we want to end this child process by going to DONE state.
 	if(checksum != 0 || flag != FILE_NAME_PACKET){
@@ -154,13 +210,6 @@ STATE start_state(int * firstPacketSize){
 		}
 		//send the okay file flag
 		safeSendto(setup.socketNum, setup.setUpPacket, *firstPacketSize, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
-		
-		
-		//temp 
-		fclose(setup.toFilePointer);
-
-
-		return DONE;
 	}
 
 	//running while loop and setting up the initial connection with polling for one sec
@@ -170,7 +219,7 @@ STATE start_state(int * firstPacketSize){
 	//adding the server socket to the pollset
 	addToPollSet(setup.socketNum);
 
-	return FILENAME;	//returns the file name state after setting everything up
+	return INORDER;	//returns the Inorder state after setting everything up
 }
 
 void processState(char *argv[]){
@@ -193,12 +242,8 @@ void processState(char *argv[]){
 				state = start_state(&firstPacketSize);
 			break;
 
-			case FILENAME:
-				// state = fileName(firstPacketSize, argv);
-			break;
-
 			case INORDER:
-			
+				state = inorder();
 			break;
 
 			case BUFFER:

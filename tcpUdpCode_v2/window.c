@@ -21,7 +21,6 @@ void init(){
 
 //packet-size needs to be constant in all packets make sure sending the same packetsize in each function call
 void addPacket(uint8_t * packetPdu, uint8_t packetSize){
-    packetSize = globalWindow.packetSize;
     uint32_t sequenceNumber_NO;
     memcpy(&sequenceNumber_NO, packetPdu, sizeof(uint32_t));
     uint32_t sequenceNumber_HO = ntohl(sequenceNumber_NO);
@@ -148,11 +147,11 @@ void printServerPacket(uint8_t * specificPacket){
     memcpy(&checksum, specificPacket + sizeof(uint32_t), sizeof(uint16_t));
     memcpy(&flag, specificPacket + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
 
-    uint8_t dataStore[globalServerBuffer.serverBufferSize - 7 + 1];  //remove the header from the total size
+    uint8_t dataStore[globalServerBuffer.serverBufferSize + 1];  //remove the header from the total size
 
-    dataStore[globalServerBuffer.serverBufferSize - 7] = '\0';
+    dataStore[globalServerBuffer.serverBufferSize] = '\0';
 
-    memcpy(dataStore, specificPacket + sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize - 7);
+    memcpy(dataStore, specificPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
 
     printf("Packet size: %d\n", globalServerBuffer.serverBufferSize);
     sequenceNumber_HO = ntohl(sequenceNumber_NO);
