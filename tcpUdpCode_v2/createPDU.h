@@ -16,6 +16,7 @@
 #include "networks.h"
 #include "safeUtil.h"
 #include "checksum.h"
+#include "window.h"
 
 
 /**

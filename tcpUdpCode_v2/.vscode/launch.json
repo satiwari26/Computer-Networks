@@ -1,15 +1,36 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(gdb) Launch",
+            "name": "(gdb) Launch rcopy",
             "type": "cppdbg",
             "request": "launch",
             "program": "/home/chero/Networks/tcpUdpCode_v2/rcopy",
-            "args": ["test.txt", "test.txt", "4", "5", "0.0", "localhost", "5000"],
+            "args": ["test.txt", "test1.txt", "4", "5", "0.0", "localhost", "5000"],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/chero/Networks/tcpUdpCode_v2/server",
+            "args": ["0.0", "5000"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
@@ -28,6 +49,5 @@
                 }
             ]
         }
-
     ]
 }

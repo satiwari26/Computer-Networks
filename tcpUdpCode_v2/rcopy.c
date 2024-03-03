@@ -33,6 +33,7 @@
 #define TIMEOUT_RESENT_DATA_PACKET 7
 #define FILE_NAME_PACKET 8
 #define RESPONSE_FLAG_NAME 9
+#define FILE_OPENING_FAIL 10
 
 typedef enum State STATE;
 
@@ -54,7 +55,7 @@ struct setUpStruct{
 };
 struct setUpStruct setup;
 
-void talkToServer(int socketNum, struct sockaddr_in6 * server);
+// void talkToServer(int socketNum, struct sockaddr_in6 * server);
 int readFromStdin(char * buffer);
 int checkArgs(int argc, char * argv[]);
 
@@ -136,7 +137,8 @@ STATE fileName(int firstPacketSize, char *argv[]){
 
 	while(1){
 		if(setup.packetCounter == 10){	//if packetCounter reaches 10 end
-			break;
+			fclose(setup.filePointer);
+			return DONE;
 		}
 		//send first packet and waiting for the ack before data transfer
 		int serverAddrLen = sizeof(struct sockaddr_in6);
@@ -145,14 +147,31 @@ STATE fileName(int firstPacketSize, char *argv[]){
 		//after sending the setup packet increament the sequnce numbe each time
 		setup.clientSequenceNumber++;
 
-		//poll for 1 second and if the pollcall fail close the original socket and send a new one
+		//poll for 1 second and if the pollcall fail f the original socket and send a new one
 		int socketVal = -1;
 		socketVal = pollCall(1000);
 
 		if(socketVal > -1){
 			int dataLen = safeRecvfrom(socketVal, buffer, MAXBUF, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
-			setup.packetCounter = 0;
-			break;
+			uint8_t tempCheckBuffer[dataLen];
+
+			//copy the received amount of data from the server
+			memcpy(tempCheckBuffer, buffer, dataLen);
+
+			//perform the checksum on the received data
+			uint16_t checkSum = in_cksum((uint16_t*)tempCheckBuffer, dataLen);
+    		checkSum == 0 ? printf("checksum verification successful\n") : printf("checksum verification failed.\n");
+			//get the flag to check if it is okay flag or fileOpening flag
+			uint8_t flag;
+			memcpy(&flag,tempCheckBuffer + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+
+			if(checkSum == 0 && flag == RESPONSE_FLAG_NAME){
+				setup.packetCounter = 0;
+				break;
+			}
+			else{
+				setup.packetCounter++;
+			}
 		}
 		else{
 			//update the packet counter
@@ -171,6 +190,10 @@ STATE fileName(int firstPacketSize, char *argv[]){
 	}
 
 	setup.packetCounter = 0;
+
+	//temp 
+	fclose(setup.filePointer);
+
 	return DONE;
 }
 
