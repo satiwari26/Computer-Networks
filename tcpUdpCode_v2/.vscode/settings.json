@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "cpe464.h": "c",
-        "gethostbyname.h": "c"
+        "gethostbyname.h": "c",
+        "string.h": "c",
+        "in.h": "c"
     }
 }

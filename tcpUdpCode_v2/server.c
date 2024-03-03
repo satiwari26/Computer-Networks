@@ -28,6 +28,8 @@
 #define FILE_NAME_PACKET 8
 #define RESPONSE_FLAG_NAME 9
 #define FILE_OPENING_FAIL 10
+#define END_OF_FILE_FLAG 11
+#define END_OF_FILE_FLAG_RESP 12
 
 struct setUpPacketInfo{
 	int socketNum;				
@@ -64,8 +66,8 @@ int checkArgs(int argc, char *argv[]);
 FILE * getFile(char * fromFileName, int fileNameSize);
 
 //create RR or SREJ packets method
-int create_RR(uint32_t sequenceNumber);
-int create_SREJ(uint32_t sequenceNumber);
+int create_RR(uint32_t RR_sequenceNumber, int flag);
+int create_SREJ(uint32_t SREJ_sequenceNumber);
 
 int main ( int argc, char *argv[]  )
 { 
@@ -116,13 +118,38 @@ int createInitialPacket(int sequenceNumber, int flag){
 	return firstPacketSize;
 }
 
+int create_RR(uint32_t RR_sequenceNumber, int flag){
+
+	if(setup.setUpPacket != NULL){	//if there is already setUp packet created remove it
+		free(setup.setUpPacket);
+	}
+
+	uint8_t RR_sequenceNumberData[sizeof(uint32_t)];
+	memcpy(RR_sequenceNumberData, &RR_sequenceNumber, sizeof(uint32_t));
+
+	int RR_pdu_size = createPDU(&setup.setUpPacket, setup.serverSequenceNumber, flag, RR_sequenceNumberData, sizeof(uint32_t));
+
+	return RR_pdu_size;
+}
+
+int createEOF_resp(int flag){
+	if(setup.setUpPacket != NULL){	//if there is already setUp packet created remove it
+		free(setup.setUpPacket);
+	}
+
+	uint8_t data = '\0';
+
+	int createEOF_size = createPDU(&setup.setUpPacket, setup.serverSequenceNumber, flag, &data, sizeof(uint8_t));
+
+	return createEOF_size;
+}
+
 STATE inorder(){
 	//the expected dataPacketSize is buffer size + header size
 	uint16_t dataPacketExpectedSize = globalServerBuffer.serverBufferSize + 7;
 	//buffer to store the data packets
 	uint8_t dataPacketReceived[dataPacketExpectedSize];
-	uint8_t payloadData[globalServerBuffer.serverBufferSize + 1];
-	payloadData[globalServerBuffer.serverBufferSize] = '\0';
+	uint8_t payloadData[globalServerBuffer.serverBufferSize];
 	while(1){
 		pollCall(10000);	//poll for 10 seconds and start 
 		//the receive size for each packet has standard of user entered server Buffer size
@@ -140,26 +167,71 @@ STATE inorder(){
 		globalServerBuffer.receive = ntohl(tempReceive_HO);
 
 		if(globalServerBuffer.receive == globalServerBuffer.expected){
-			//write the packet to opened file
-			memcpy(payloadData, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
-			size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
-			if(bytesWritten != globalServerBuffer.serverBufferSize){
-				printf("Error writing data in the disk.\n");
+			//extracting out the data flag
+			uint8_t dataPacketFlag;
+			memcpy(&dataPacketFlag, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+
+			//if received regular data packet, send RR
+			if(dataPacketFlag == REGULAR_DATA_PACKET){
+
+				//write the packet to opened file
+				memcpy(payloadData, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
+				size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
+				if(bytesWritten != globalServerBuffer.serverBufferSize){
+					printf("Error writing data in the disk.\n");
+				}
+				fflush(setup.toFilePointer);
+
+				printServerPacket(dataPacketReceived);	//print the receive packet in the data
+				//update the highest to the expected
+				globalServerBuffer.highest = globalServerBuffer.expected;
+				globalServerBuffer.expected++;
+
+				//create and send the rr packet
+				int RR_PDU_SIZE = create_RR(globalServerBuffer.expected, RR_PACKET);
+				safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+				setup.serverSequenceNumber++;
 			}
-			fflush(setup.toFilePointer);
+			//if received end of file packet
+			else if(dataPacketFlag == END_OF_FILE_FLAG){
+				if(dataPacketReceivedSize > 8){	//case when we read less bytes from the file than the standard require
+					uint16_t EOF_payload_len = dataPacketReceivedSize - 7;
 
-			printServerPacket(dataPacketReceived);	//print the receive packet in the data
-			//update the highest to the expected
-			globalServerBuffer.highest = globalServerBuffer.expected;
-			globalServerBuffer.expected++;
+					//write the packet to opened file
+					memcpy(payloadData, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), EOF_payload_len);
+					size_t bytesWritten = fwrite(payloadData, 1, EOF_payload_len, setup.toFilePointer);
+					if(bytesWritten != globalServerBuffer.serverBufferSize){
+						printf("Error writing data in the disk.\n");
+					}
+					fflush(setup.toFilePointer);
 
+					printServerPacket(dataPacketReceived);	//print the receive packet in the data
+					//update the highest to the expected
+					globalServerBuffer.highest = globalServerBuffer.expected;
+					globalServerBuffer.expected++;
+
+					//create and send the rr packet with END of FILE flag
+					int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
+					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+					setup.serverSequenceNumber++;
+
+					return DONE;
+				}
+			}
+		}
+		//if receive is lower than expected
+		else if(globalServerBuffer.receive < globalServerBuffer.expected){
 			//create and send the rr packet
-
+			int RR_PDU_SIZE = create_RR(globalServerBuffer.highest, RR_PACKET);
+			safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+			setup.serverSequenceNumber++;
 		}
 		else{
 			printf("Received the non-expected sequence number\n\n");
 		}
 	}
+
+	return DONE;
 }
 
 STATE start_state(int * firstPacketSize){
@@ -194,6 +266,7 @@ STATE start_state(int * firstPacketSize){
 	//file failed to open
 	if(setup.toFilePointer == NULL){
 		*firstPacketSize = createInitialPacket(setup.serverSequenceNumber, FILE_OPENING_FAIL);
+		setup.serverSequenceNumber++;
 		if(*firstPacketSize <= 7){
 			printf("The first packet size is not correct\n");
 			return DONE;
@@ -204,6 +277,7 @@ STATE start_state(int * firstPacketSize){
 	}
 	else{
 		*firstPacketSize = createInitialPacket(setup.serverSequenceNumber, RESPONSE_FLAG_NAME);
+		setup.serverSequenceNumber++;
 		if(*firstPacketSize <= 7){
 			printf("The first packet size is not correct\n");
 			return DONE;
@@ -255,6 +329,7 @@ void processState(char *argv[]){
 			break;
 
 			case DONE:
+				fclose(setup.toFilePointer);
 				exit(EXIT_SUCCESS);
 			break;
 

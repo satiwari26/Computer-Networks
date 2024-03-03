@@ -36,6 +36,7 @@
 #define RESPONSE_FLAG_NAME 9
 #define FILE_OPENING_FAIL 10
 #define END_OF_FILE_FLAG 11
+#define END_OF_FILE_FLAG_RESP 12
 
 //data_packet_size_received
 #define data_packet_size_received 11
@@ -57,6 +58,7 @@ struct setUpStruct{
 	uint8_t * setUpPacket;
 	uint32_t clientSequenceNumber;
 	uint32_t packetCounter;
+	bool sendEOF;
 };
 struct setUpStruct setup;
 
@@ -68,9 +70,11 @@ int checkArgs(int argc, char * argv[]);
 STATE start_state(int * firstPacketSize);
 STATE fileName(int firstPacketSize, char *argv[]);
 STATE file_ok();
+STATE endOfFile();
 STATE done();
 void processState(char *argv[]);
 int createInitialPacket(int sequenceNumber, int flag);
+uint32_t SREJ_RR_SEQUENCE(uint8_t * data);
 
 
 int main (int argc, char *argv[])
@@ -111,10 +115,11 @@ void processState(char *argv[]){
 			break;
 
 			case END_OF_FILE:
-				
+				state = endOfFile();
 			break;
 
 			case DONE:
+				fclose(setup.filePointer);
 				exit(EXIT_SUCCESS);
 			break;
 
@@ -139,23 +144,98 @@ FILE * getFile(char * fromFileName){
 	return filePointer;
 }
 
+uint32_t SREJ_RR_SEQUENCE(uint8_t * data){
+	uint32_t passedSequenceNumber;
+	memcpy(&passedSequenceNumber, data + 7, sizeof(uint32_t));	//get the RR or SREJ sequence number from the payload after header
+	return passedSequenceNumber;
+}
+
+STATE endOfFile(){
+	if(setup.sendEOF == false){	//if we didn't send the last packet, send an extra packet to notify the server
+
+		//for this need to perform the window check see if it open and close and based of that send this last packet
+		uint8_t updatedTempBuffer[1];	//to store one null char as part of the pdu
+		updatedTempBuffer[0] = '\0';
+		if(setup.setUpPacket != NULL){
+			//if there exist a packet free it
+			free(setup.setUpPacket);
+		}
+		createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, updatedTempBuffer, sizeof(uint8_t));
+		//send this packet
+		// -------//
+		setup.clientSequenceNumber++;
+		addPacket(setup.setUpPacket, 8);
+	}
+	else{	//the last packet have been sent, waiting for the ack back
+
+		int serverAddrLen = sizeof(struct sockaddr_in6);
+		uint8_t bufferData[11];	// 7 bytes for header and 4 bytes for the payload pdu
+		setup.packetCounter = 0;	//initialize the packet counter to 0
+
+		while(1){
+			//if 10 tries fail return to done state
+			if(setup.packetCounter == 10){
+				return DONE;
+			}
+			//poll for 1s
+			int socketVal = pollCall(1000);
+			if(socketVal > -1){
+				int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+
+				uint8_t flagReceived;
+				memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+				//if the last flag received end
+				if(flagReceived == END_OF_FILE_FLAG_RESP){
+					return DONE;
+				}
+
+				uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
+
+				//update the lower and upper window based of the received RR packet
+				updateWindow(received_RR_SREJ_sequenceNumber);
+				printf("received data packet from the server %d\n",dataLen);
+			}
+			else{	//pollCall 1 second time out, need to resend the lowest packet
+
+				//get the lowest packet from the buffer and send it to server again
+				uint8_t pduPacketSize;
+				memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint8_t));
+				safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint8_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+
+				//incremeant the packet-counter
+				setup.packetCounter++;
+			}
+		}
+	}
+
+	return DONE;
+
+}
+
 STATE file_ok(){
 	//initialize my window api
 	init();
 
 	uint8_t tempBuffer[globalWindow.packetSize];
 	uint16_t bytesRead;
-	bool sendEOF = false;
+	setup.sendEOF = false;
 	int serverAddrLen = sizeof(struct sockaddr_in6);
-	uint8_t bufferData[11];
+	uint8_t bufferData[11];	// 7 bytes for header and 4 bytes for the payload pdu
+
+	//initialize the packet counter to 0
+	setup.packetCounter = 0;
 
 	while (1) {
 		//while window is open
 		while(globalWindow.current != globalWindow.upper){
+			printf("current: %d\n",globalWindow.current);
+			printf("upper: %d\n",globalWindow.upper);
+
 			//read from the file
 			bytesRead = fread(tempBuffer, 1, globalWindow.packetSize, setup.filePointer);
+			//0 bytes read that means we have send the EOF packet already
 			if(bytesRead == 0){
-				break;
+				return END_OF_FILE;
 			}
 			//create and send the packet, add it to buffer
 				if(setup.setUpPacket != NULL){
@@ -184,41 +264,75 @@ STATE file_ok(){
 					addPacket(setup.setUpPacket, 7 + bytesRead);	//7 bytes for the header size
 					setup.clientSequenceNumber++;
 					//set sendEOF to true since we send it aready and no need to send extra packet
-					sendEOF = true;
+					setup.sendEOF = true;
 					//update the current pointer
 					globalWindow.current++;
+
+					//Enter the EOF state
+					return END_OF_FILE;
 				}
 
 			//receive the RR's or SREJ
 			int socketVal = pollCall(0);
-			while(socketVal > -1){
-				int dataLen = safeRecvfrom(socketVal, bufferData, MAXBUF, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+			if(socketVal > -1){
+				int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
 
+				uint8_t flagReceived;
+				memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+				//if the last flag received end
+				if(flagReceived == END_OF_FILE_FLAG_RESP){
+					return DONE;
+				}
+				
+				uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
+
+				//update the lower and upper window based of the received RR packet
+				updateWindow(received_RR_SREJ_sequenceNumber);
 				printf("received data packet from the server %d\n",dataLen);
 			}
 		}
 
-		//last packet read,
-		if(bytesRead == 0){
-			break;
+		//if window is closed
+		while(globalWindow.current == globalWindow.upper){
+			//if 10 tries fail return to done state
+			if(setup.packetCounter == 10){
+				return DONE;
+			}
+			//poll for 1s
+			int socketVal = pollCall(1000);
+			if(socketVal > -1){
+				int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+
+				uint8_t flagReceived;
+				memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+				//if the last flag received end
+				if(flagReceived == END_OF_FILE_FLAG_RESP){
+					return DONE;
+				}
+
+				uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
+
+				//update the lower and upper window based of the received RR packet
+				updateWindow(received_RR_SREJ_sequenceNumber);
+				printf("received data packet from the server %d\n",dataLen);
+			}
+			else{	//pollCall 1 second time out, need to resend the lowest packet
+
+				//get the lowest packet from the buffer and send it to server again
+				uint8_t pduPacketSize;
+				memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint8_t));
+				safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint8_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+
+				//incremeant the packet-counter
+				setup.packetCounter++;
+			}
 		}
+
+		//reset the counter to 0
+		setup.packetCounter = 0;
     }
 
-	if(sendEOF == false){	//if we didn't send the last packet, send an extra packet to notify the server
-		uint8_t updatedTempBuffer[1];	//to store one null char as part of the pdu
-		updatedTempBuffer[0] = '\0';
-		if(setup.setUpPacket != NULL){
-			//if there exist a packet free it
-			free(setup.setUpPacket);
-		}
-		createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, updatedTempBuffer, sizeof(uint8_t));
-		//send this packet
-		// -------//
-		setup.clientSequenceNumber++;
-		addPacket(setup.setUpPacket, 8);
-	}
-
-	return DONE;
+	return END_OF_FILE;
 }
 
 STATE fileName(int firstPacketSize, char *argv[]){
@@ -338,45 +452,6 @@ STATE start_state(int * firstPacketSize){
 
 	return FILENAME;	//returns the file name state after setting everything up
 }
-
-
-
-
-
-// void talkToServer(int socketNum, struct sockaddr_in6 * server)
-// {
-// 	int serverAddrLen = sizeof(struct sockaddr_in6);
-// 	char * ipString = NULL;
-// 	int dataLen = 0; 
-// 	char buffer[MAXBUF+1];
-// 	uint8_t * pduBuffer = NULL;
-// 	uint32_t sequenceNumber = 1;
-// 	uint8_t flag = 0;
-	
-// 	buffer[0] = '\0';
-// 	while (buffer[0] != '.')
-// 	{
-// 		dataLen = readFromStdin(buffer);
-
-// 		printf("Sending: %s with len: %d\n", buffer,dataLen);
-
-// 		//creating the pdu packet
-// 		int pduLength = createPDU(&pduBuffer, sequenceNumber, flag, (uint8_t *)buffer, dataLen);
-// 		//verifying the pdu packet
-// 		printPDU(pduBuffer, pduLength);
-// 		//sending the pduPacket to the server
-// 		safeSendto(socketNum, pduBuffer, pduLength, 0, (struct sockaddr *) server, serverAddrLen);
-		
-// 		safeRecvfrom(socketNum, buffer, MAXBUF, 0, (struct sockaddr *) server, &serverAddrLen);
-		
-// 		// print out bytes received
-// 		ipString = ipAddressToString(server);
-// 		printf("Server with ip: %s and port %d said it received %s\n", ipString, ntohs(server->sin6_port), buffer);
-
-// 		//increamenting the sequence number for each run
-// 		sequenceNumber++;
-// 	}
-// }
 
 int readFromStdin(char * buffer)
 {
