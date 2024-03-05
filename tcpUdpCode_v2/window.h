@@ -44,7 +44,7 @@ void init();
  * @brief
  * adding the packet in the buffer based of the sequence number
 */
-void addPacket(uint8_t * packetPdu, uint8_t packetSize);
+void addPacket(uint8_t * packetPdu, uint16_t packetSize);
 
 /**
  * @brief
@@ -86,7 +86,7 @@ struct serverBuffer{
     uint32_t serverBufferSize;  //the first packet send by the client has this information
     uint32_t serverWindowSize;  //the first packet also contains this information
     uint8_t **ServerBuffer; //Server buffer to hold the packets that are received later
-    uint8_t * validationBuffer;
+    int8_t * validationBuffer;
     char * toFileName;  //to store the 
 };
 
@@ -102,7 +102,7 @@ void initServerbuffer();
  * @brief
  * add element to the server buffer
 */
-void addServerPacket(uint8_t * packetPdu);
+void addServerPacket(uint8_t * packetPdu, uint16_t packetSize);
 
 /**
  * @brief
@@ -121,6 +121,14 @@ void printServerPacket(uint8_t * specificPacket);
  * to print the entire server buffer
 */
 void printServerEntireWindow();
+
+/**
+ * @brief
+ * set the invalid bit if there are sequence # missing between received vs expected
+ * 
+ * NOTE: only execute when in the buffer state
+*/
+void invalidationCheck();
 
 /**
  * @brief

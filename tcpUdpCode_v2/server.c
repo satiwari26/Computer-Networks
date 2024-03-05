@@ -125,11 +125,28 @@ int create_RR(uint32_t RR_sequenceNumber, int flag){
 	}
 
 	uint8_t RR_sequenceNumberData[sizeof(uint32_t)];
-	memcpy(RR_sequenceNumberData, &RR_sequenceNumber, sizeof(uint32_t));
+	uint32_t RR_sequenceNumber_NO = htonl(RR_sequenceNumber);
+
+	memcpy(RR_sequenceNumberData, &RR_sequenceNumber_NO, sizeof(uint32_t));
 
 	int RR_pdu_size = createPDU(&setup.setUpPacket, setup.serverSequenceNumber, flag, RR_sequenceNumberData, sizeof(uint32_t));
 
 	return RR_pdu_size;
+}
+
+int create_SREJ(uint32_t SREJ_sequenceNumber){
+	if(setup.setUpPacket != NULL){	//if there is already setUp packet created remove it
+		free(setup.setUpPacket);
+	}
+	uint8_t SREJ_sequenceNumberData[sizeof(uint32_t)];
+	uint32_t SREJ_sequenceNumber_NO = htonl(SREJ_sequenceNumber);
+
+	memcpy(SREJ_sequenceNumberData, &SREJ_sequenceNumber_NO, sizeof(uint32_t));
+
+	//setting up the initial packet to send it to the server (return packet size should be payloadLength + 7 bits)
+	int firstPacketSize =  createPDU(&setup.setUpPacket, SREJ_sequenceNumber, SREJ_FLAG, SREJ_sequenceNumberData, sizeof(uint32_t));
+
+	return firstPacketSize;
 }
 
 int createEOF_resp(int flag){
@@ -144,103 +161,336 @@ int createEOF_resp(int flag){
 	return createEOF_size;
 }
 
-STATE inorder(){
-	//the expected dataPacketSize is buffer size + header size
-	uint16_t dataPacketExpectedSize = globalServerBuffer.serverBufferSize + 7;
-	//buffer to store the data packets
-	uint8_t dataPacketReceived[dataPacketExpectedSize];
-	uint8_t payloadData[globalServerBuffer.serverBufferSize];
+STATE flushing(){
+	//check for the validation in the buffer
 	while(1){
-		pollCall(10000);	//poll for 10 seconds and start 
-		//the receive size for each packet has standard of user entered server Buffer size
-		uint16_t dataPacketReceivedSize = safeRecvfrom(setup.socketNum, dataPacketReceived, dataPacketExpectedSize, 0, (struct sockaddr *) &setup.client, &setup.clientAddrLen);
+		uint32_t indexVal = globalServerBuffer.expected % globalServerBuffer.serverWindowSize;
+		uint32_t currSequenceNumber_HO;
+		uint32_t currSequenceNumber_NO;
+		printf("expected: %d\n",globalServerBuffer.expected);
+		printf("highest: %d\n",globalServerBuffer.highest);
+		//extracting the sequence number from the expected index val
+		memcpy(&currSequenceNumber_NO, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t), sizeof(uint32_t));
+		currSequenceNumber_HO = ntohl(currSequenceNumber_NO);
+		printf("validation, index: %d, %d\n",globalServerBuffer.validationBuffer[indexVal], indexVal);
+		//when exptected reached the highest
+		if(globalServerBuffer.expected < globalServerBuffer.highest && globalServerBuffer.validationBuffer[indexVal] == invalid){
+			//create and send the SREJ
+			int SREJ_packet_size = create_SREJ(globalServerBuffer.expected);
+			//send the SREJ
+			safeSendto(setup.socketNum, setup.setUpPacket, SREJ_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
 
-		//perform the checksum on the received data
-		uint16_t checkSum = in_cksum((uint16_t*)dataPacketReceived, dataPacketReceivedSize);
-		if(checkSum != 0){
-			printf("Checksum failed drop this packet.\n\n");
+			//return to the Buffer state
+			return BUFFER;
 		}
-		uint32_t tempReceive_HO = 0;
-		memcpy(&tempReceive_HO, dataPacketReceived, sizeof(uint32_t));
-
-		//convert the receive network sequence number to host order
-		globalServerBuffer.receive = ntohl(tempReceive_HO);
-
-		if(globalServerBuffer.receive == globalServerBuffer.expected){
+		else if(globalServerBuffer.expected == globalServerBuffer.highest){
 			//extracting out the data flag
 			uint8_t dataPacketFlag;
-			memcpy(&dataPacketFlag, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+			memcpy(&dataPacketFlag, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
 
 			//if received regular data packet, send RR
 			if(dataPacketFlag == REGULAR_DATA_PACKET){
-
+				uint8_t payloadData[globalServerBuffer.serverBufferSize];
 				//write the packet to opened file
-				memcpy(payloadData, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
+				memcpy(payloadData, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
 				size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
 				if(bytesWritten != globalServerBuffer.serverBufferSize){
 					printf("Error writing data in the disk.\n");
 				}
 				fflush(setup.toFilePointer);
 
-				printServerPacket(dataPacketReceived);	//print the receive packet in the data
-				//update the highest to the expected
-				globalServerBuffer.highest = globalServerBuffer.expected;
+				//flush that buffer location
+				flushPacket(indexVal);
+
+				//increament the expected
 				globalServerBuffer.expected++;
 
+				//create the RR extected and send RR expected
+				int RR_PDU_SIZE = create_RR(globalServerBuffer.expected, RR_PACKET);
+				safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+				setup.serverSequenceNumber++;
+				
+				return INORDER;
+			}
+			else if(dataPacketFlag == END_OF_FILE_FLAG){
+
+				uint8_t packetSizeBuffered;
+				memcpy(&packetSizeBuffered, globalServerBuffer.ServerBuffer[indexVal], sizeof(uint16_t));
+
+				if(packetSizeBuffered > 8){	//case when we read less bytes from the file than the standard require
+					uint16_t EOF_payload_len = packetSizeBuffered - 7;
+					uint8_t payloadData[EOF_payload_len];
+
+					//write the packet to opened file
+					memcpy(payloadData, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), EOF_payload_len);
+					size_t bytesWritten = fwrite(payloadData, 1, EOF_payload_len, setup.toFilePointer);
+					if(bytesWritten != EOF_payload_len){
+						printf("Error writing data in the disk.\n");
+					}
+					fflush(setup.toFilePointer);
+
+					//flush that buffer location
+					flushPacket(indexVal);
+
+					//create and send the rr packet with END of FILE flag
+					int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
+					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+					setup.serverSequenceNumber++;
+
+						//print the receive packet in the data
+				}
+				else{
+					//don't write it to the file
+
+					//create and send the rr packet with END of FILE flag
+					int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
+					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+					setup.serverSequenceNumber++;
+				}
+
+				//increament the expected
+				globalServerBuffer.expected++;
+
+				//after sending the eof flag we can just quit and end the program
+				return DONE;
+			}
+		}
+		//if the sequence number is the expected sequence number and is valid
+		else if(currSequenceNumber_HO == globalServerBuffer.expected && globalServerBuffer.validationBuffer[indexVal] == valid){
+			//extracting out the data flag
+			uint8_t dataPacketFlag;
+			memcpy(&dataPacketFlag, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+
+			//if received regular data packet, send RR
+			if(dataPacketFlag == REGULAR_DATA_PACKET){
+				uint8_t payloadData[globalServerBuffer.serverBufferSize];
+				//write the packet to opened file
+				memcpy(payloadData, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
+				size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
+				if(bytesWritten != globalServerBuffer.serverBufferSize){
+					printf("Error writing data in the disk.\n");
+				}
+				fflush(setup.toFilePointer);
+
+				//flush that buffer location
+				flushPacket(indexVal);
+
+					//print the receive packet in the data
+			}
+			else if(dataPacketFlag == END_OF_FILE_FLAG){
+
+				uint8_t packetSizeBuffered;
+				memcpy(&packetSizeBuffered, globalServerBuffer.ServerBuffer[indexVal], sizeof(uint16_t));
+
+				if(packetSizeBuffered > 8){	//case when we read less bytes from the file than the standard require
+					uint16_t EOF_payload_len = packetSizeBuffered - 7;
+					uint8_t payloadData[EOF_payload_len];
+
+					//write the packet to opened file
+					memcpy(payloadData, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), EOF_payload_len);
+					size_t bytesWritten = fwrite(payloadData, 1, EOF_payload_len, setup.toFilePointer);
+					if(bytesWritten != EOF_payload_len){
+						printf("Error writing data in the disk.\n");
+					}
+					fflush(setup.toFilePointer);
+
+					//flush that buffer location
+					flushPacket(indexVal);
+
+						//print the receive packet in the data
+				}
+			}
+			//increament the expected
+			globalServerBuffer.expected++;
+		}
+	}
+}
+
+
+STATE buffer(){
+	//the expected dataPacketSize is buffer size + header size
+	uint16_t dataPacketExpectedSize = globalServerBuffer.serverBufferSize + 7;
+
+	while(1){
+		int polVal = pollCall(10000);
+		if(polVal > -1){
+			uint16_t dataPacketReceivedSize = safeRecvfrom(setup.socketNum, setup.receivedSetUpPacket, dataPacketExpectedSize, 0, (struct sockaddr *) &setup.client, &setup.clientAddrLen);
+			//perform the checksum on the received data
+			uint16_t checkSum = in_cksum((uint16_t*)setup.receivedSetUpPacket, dataPacketReceivedSize);
+			
+			if(checkSum == 0){	//if checksum is successful
+				uint32_t tempReceive_HO = 0;
+				memcpy(&tempReceive_HO, setup.receivedSetUpPacket, sizeof(uint32_t));
+
+				//convert the receive network sequence number to host order
+				globalServerBuffer.receive = ntohl(tempReceive_HO);
+
+				//perform the checking between the highest and received and if there are bits missing set them to invalid
+				invalidationCheck();
+
+				//if received is greater than the expected
+				if(globalServerBuffer.receive > globalServerBuffer.expected){
+					//buffer the receive packet
+					addServerPacket(setup.receivedSetUpPacket, dataPacketReceivedSize);
+					//setting the highest to what we receive
+					globalServerBuffer.highest = globalServerBuffer.receive;
+				}
+				//if we receive the expected packet
+				else if(globalServerBuffer.receive == globalServerBuffer.expected){
+					//write the packet to disk
+					//extracting out the data flag
+					uint8_t dataPacketFlag;
+					memcpy(&dataPacketFlag, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+
+					//if received regular data packet, send RR
+					if(dataPacketFlag == REGULAR_DATA_PACKET){
+						uint8_t payloadData[globalServerBuffer.serverBufferSize];
+						//write the packet to opened file
+						memcpy(payloadData, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
+						size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
+						if(bytesWritten != globalServerBuffer.serverBufferSize){
+							printf("Error writing data in the disk.\n");
+						}
+						fflush(setup.toFilePointer);
+					}
+					//the packet can't be eof packet because after that it shouldn't receive any packets
+
+					//increament the expected
+					globalServerBuffer.expected++;
+					return FLUSHING;
+				}
+				else if(globalServerBuffer.receive < globalServerBuffer.expected){	//if SREJ didn't make it and we receive lower than expected, resend SREJ
+					//create and send the SREJ
+					int SREJ_packet_size = create_SREJ(globalServerBuffer.expected);
+					//send the SREJ
+					safeSendto(setup.socketNum, setup.setUpPacket, SREJ_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+					setup.serverSequenceNumber++;
+				}
+			}
+		}
+		//failed to receive anything after 10s
+		else{
+			return DONE;
+		}
+	}
+
+	return DONE;
+}
+
+STATE inorder(){
+	if(setup.receivedSetUpPacket != NULL){
+		free(setup.receivedSetUpPacket);
+	}
+	//the expected dataPacketSize is buffer size + header size
+	uint16_t dataPacketExpectedSize = globalServerBuffer.serverBufferSize + 7;
+	//buffer to store the data packets
+	setup.receivedSetUpPacket = (uint8_t *)malloc(dataPacketExpectedSize);
+	uint8_t payloadData[globalServerBuffer.serverBufferSize];
+	while(1){
+		pollCall(10000);	//poll for 10 seconds and start 
+		//the receive size for each packet has standard of user entered server Buffer size
+		uint16_t dataPacketReceivedSize = safeRecvfrom(setup.socketNum, setup.receivedSetUpPacket, dataPacketExpectedSize, 0, (struct sockaddr *) &setup.client, &setup.clientAddrLen);
+
+		//perform the checksum on the received data
+		uint16_t checkSum = in_cksum((uint16_t*)setup.receivedSetUpPacket, dataPacketReceivedSize);
+		uint32_t tempReceive_HO = 0;
+		memcpy(&tempReceive_HO, setup.receivedSetUpPacket, sizeof(uint32_t));
+
+		//convert the receive network sequence number to host order
+		globalServerBuffer.receive = ntohl(tempReceive_HO);
+
+		if(checkSum == 0){	//if checksum pass then perform other action 
+			printf("Checksum passed!\n\n");
+		
+			if(globalServerBuffer.receive == globalServerBuffer.expected){
+				//extracting out the data flag
+				uint8_t dataPacketFlag;
+				memcpy(&dataPacketFlag, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+
+				//if received regular data packet, send RR
+				if(dataPacketFlag == REGULAR_DATA_PACKET){
+
+					//write the packet to opened file
+					memcpy(payloadData, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
+					size_t bytesWritten = fwrite(payloadData, 1, globalServerBuffer.serverBufferSize, setup.toFilePointer);
+					if(bytesWritten != globalServerBuffer.serverBufferSize){
+						printf("Error writing data in the disk.\n");
+					}
+					fflush(setup.toFilePointer);
+					//update the highest to the expected
+					globalServerBuffer.highest = globalServerBuffer.expected;
+					globalServerBuffer.expected++;
+
+					//create and send the rr packet
+					int RR_PDU_SIZE = create_RR(globalServerBuffer.expected, RR_PACKET);
+					safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+					setup.serverSequenceNumber++;
+				}
+				//if received end of file packet
+				else if(dataPacketFlag == END_OF_FILE_FLAG){
+					if(dataPacketReceivedSize > 8){	//case when we read less bytes from the file than the standard require
+						uint16_t EOF_payload_len = dataPacketReceivedSize - 7;
+
+						//write the packet to opened file
+						memcpy(payloadData, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), EOF_payload_len);
+						size_t bytesWritten = fwrite(payloadData, 1, EOF_payload_len, setup.toFilePointer);
+						if(bytesWritten != globalServerBuffer.serverBufferSize){
+							printf("Error writing data in the disk.\n");
+						}
+						fflush(setup.toFilePointer);
+
+						//update the highest to the expected
+						globalServerBuffer.highest = globalServerBuffer.expected;
+						globalServerBuffer.expected++;
+
+						//create and send the rr packet with END of FILE flag
+						int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
+						safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+						setup.serverSequenceNumber++;
+
+						return DONE;
+					}
+					else if(dataPacketReceivedSize == 8){	//case when a EOF needs to be send seperately
+						//update the highest to the expected
+						globalServerBuffer.highest = globalServerBuffer.expected;
+						globalServerBuffer.expected++;
+
+						//create and send the rr packet with END of FILE flag
+						int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
+						safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+						setup.serverSequenceNumber++;
+
+						return DONE;
+					}
+				}
+			}
+			//if receive is lower than expected
+			else if(globalServerBuffer.receive < globalServerBuffer.expected){
 				//create and send the rr packet
 				int RR_PDU_SIZE = create_RR(globalServerBuffer.expected, RR_PACKET);
 				safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
 				setup.serverSequenceNumber++;
 			}
-			//if received end of file packet
-			else if(dataPacketFlag == END_OF_FILE_FLAG){
-				if(dataPacketReceivedSize > 8){	//case when we read less bytes from the file than the standard require
-					uint16_t EOF_payload_len = dataPacketReceivedSize - 7;
+			//if recv is greater than what we expected, need to handel that in the buffer
+			else if(globalServerBuffer.receive > globalServerBuffer.expected){
+				printf("Received the non-expected sequence number\n\n");
 
-					//write the packet to opened file
-					memcpy(payloadData, dataPacketReceived + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), EOF_payload_len);
-					size_t bytesWritten = fwrite(payloadData, 1, EOF_payload_len, setup.toFilePointer);
-					if(bytesWritten != globalServerBuffer.serverBufferSize){
-						printf("Error writing data in the disk.\n");
-					}
-					fflush(setup.toFilePointer);
+				//setting up the server buffer
+				initServerbuffer();
 
-					printServerPacket(dataPacketReceived);	//print the receive packet in the data
-					//update the highest to the expected
-					globalServerBuffer.highest = globalServerBuffer.expected;
-					globalServerBuffer.expected++;
+				//create and send the SREJ
+				int SREJ_packet_size = create_SREJ(globalServerBuffer.expected);
+				//send the SREJ
+				safeSendto(setup.socketNum, setup.setUpPacket, SREJ_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
 
-					//create and send the rr packet with END of FILE flag
-					int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
-					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
-					setup.serverSequenceNumber++;
+				//buffer the receive packet
+				addServerPacket(setup.receivedSetUpPacket, dataPacketReceivedSize);
 
-					return DONE;
-				}
-				else if(dataPacketReceivedSize == 8){	//case when a EOF needs to be send seperately
-					 printServerPacket(dataPacketReceived);	//print the receive packet in the data
-					//update the highest to the expected
-					globalServerBuffer.highest = globalServerBuffer.expected;
-					globalServerBuffer.expected++;
+				//setting the highest to what we receive
+				globalServerBuffer.highest = globalServerBuffer.receive;
 
-					//create and send the rr packet with END of FILE flag
-					int EOF_PDU_SIZE = createEOF_resp(END_OF_FILE_FLAG_RESP);
-					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
-					setup.serverSequenceNumber++;
-
-					return DONE;
-				}
+				return BUFFER;
 			}
-		}
-		//if receive is lower than expected
-		else if(globalServerBuffer.receive < globalServerBuffer.expected){
-			//create and send the rr packet
-			int RR_PDU_SIZE = create_RR(globalServerBuffer.highest, RR_PACKET);
-			safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
-			setup.serverSequenceNumber++;
-		}
-		else{
-			printf("Received the non-expected sequence number\n\n");
 		}
 	}
 
@@ -334,11 +584,11 @@ void processState(char *argv[]){
 			break;
 
 			case BUFFER:
-			
+				state = buffer();
 			break;
 
 			case FLUSHING:
-			
+				state = flushing();
 			break;
 
 			case DONE:
@@ -365,21 +615,23 @@ void processClient(int socketNum, char *argv[])
 	{
 		setup.firstPacketdataLen = safeRecvfrom(socketNum, setup.receivedSetUpPacket, MAXBUF, 0, (struct sockaddr *) &setup.client, &setup.clientAddrLen);
 
-		//fork and start the child process state machines
-		// pid_t pid;
+		uint16_t checkSum = in_cksum((uint16_t*)setup.receivedSetUpPacket, setup.firstPacketdataLen);
+		if(checkSum == 0){
+			//fork and start the child process state machines
+			// pid_t pid;
 
-		// pid = fork();
-		// if(pid < 0){
-		// 	printf("forking for the child process failed\n");
-		// 	exit(EXIT_FAILURE);
-		// }
-		// else if(pid == 0){
-			//child process
-			close(setup.socketNum);	//close the original socket for the child
-			processState(argv);
-		// 	exit(EXIT_SUCCESS);
-		// }
-
+			// pid = fork();
+			// if(pid < 0){
+			// 	printf("forking for the child process failed\n");
+			// 	exit(EXIT_FAILURE);
+			// }
+			// else if(pid == 0){
+				//child process
+				close(setup.socketNum);	//close the original socket for the child
+				processState(argv);
+			// 	exit(EXIT_SUCCESS);
+			// }
+		}
 	}
 }
 

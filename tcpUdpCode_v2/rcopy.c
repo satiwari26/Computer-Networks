@@ -74,7 +74,7 @@ STATE endOfFile();
 STATE done();
 void processState(char *argv[]);
 int createInitialPacket(int sequenceNumber, int flag);
-uint32_t SREJ_RR_SEQUENCE(uint8_t * data);
+uint32_t SREJ_RR_SEQUENCE(uint8_t * data, uint8_t * flag);
 
 
 int main (int argc, char *argv[])
@@ -144,10 +144,15 @@ FILE * getFile(char * fromFileName){
 	return filePointer;
 }
 
-uint32_t SREJ_RR_SEQUENCE(uint8_t * data){
+uint32_t SREJ_RR_SEQUENCE(uint8_t * data, uint8_t * flag){
+
 	uint32_t passedSequenceNumber;
 	memcpy(&passedSequenceNumber, data + 7, sizeof(uint32_t));	//get the RR or SREJ sequence number from the payload after header
-	return passedSequenceNumber;
+
+	//type of flag SREJ or RR
+	memcpy(flag, data + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint32_t));
+
+	return ntohl(passedSequenceNumber);
 }
 
 STATE endOfFile(){
@@ -166,7 +171,7 @@ STATE endOfFile(){
 					//if there exist a packet free it
 					free(setup.setUpPacket);
 				}
-				int lastPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, updatedTempBuffer, sizeof(uint8_t));
+				uint16_t lastPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, updatedTempBuffer, sizeof(uint8_t));
 				//send this packet
 				
 				safeSendto(setup.socketNum, setup.setUpPacket, lastPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
@@ -189,29 +194,45 @@ STATE endOfFile(){
 					int socketVal = pollCall(1000);
 					if(socketVal > -1){
 						int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+						//reset the counter to  0 if we receive anything from the server
+						setup.packetCounter = 0;
 
-						uint8_t flagReceived;
-						memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
-						//if the last flag received end
-						if(flagReceived == END_OF_FILE_FLAG_RESP){
-							return DONE;
+						//perfrom the checksum on the receive data
+						setup.packetCounter = 0;
+
+						uint16_t checkSum = in_cksum((uint16_t*)bufferData, dataLen);
+						if(checkSum == 0){
+							uint8_t flagReceived;
+							memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+							//if the last flag received end
+							if(flagReceived == END_OF_FILE_FLAG_RESP){
+								return DONE;
+							}
+
+							uint8_t SREJ_RR_flag;
+							uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData, &SREJ_RR_flag);
+
+							if(SREJ_RR_flag == RR_PACKET){
+								//update the lower and upper window based of the received RR packet
+								updateWindow(received_RR_SREJ_sequenceNumber);
+								printf("received data packet from the server %d\n",dataLen);
+							}
+							else if(SREJ_RR_flag == SREJ_FLAG){
+								uint16_t pduPacketSize;
+								memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
+								safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+							}
 						}
-
-						uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
-
-						//update the lower and upper window based of the received RR packet
-						updateWindow(received_RR_SREJ_sequenceNumber);
-						printf("received data packet from the server %d\n",dataLen);
 					}
 					else{	//pollCall 1 second time out, need to resend the lowest packet
 
 						//get the lowest packet from the buffer and send it to server again
-						uint8_t pduPacketSize;
-						memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint8_t));
-						safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint8_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+						uint16_t pduPacketSize;
+						memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint16_t));
+						safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
 						//increament the sequence number
-						setup.clientSequenceNumber++;
+						// setup.clientSequenceNumber++;
 
 						//incremeant the packet-counter
 						setup.packetCounter++;
@@ -231,26 +252,40 @@ STATE endOfFile(){
 		int socketVal = pollCall(1000);
 		if(socketVal > -1){
 			int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+			//reset the counter to  0 if we receive anything from the server
+			setup.packetCounter = 0;
 
-			uint8_t flagReceived;
-			memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
-			//if the last flag received end
-			if(flagReceived == END_OF_FILE_FLAG_RESP){
-				return DONE;
+			//perform the checksum
+			uint16_t checkSum = in_cksum((uint16_t*)bufferData, dataLen);
+			if(checkSum == 0){
+				uint8_t flagReceived;
+				memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+				//if the last flag received end
+				if(flagReceived == END_OF_FILE_FLAG_RESP){
+					return DONE;
+				}
+
+				uint8_t SREJ_RR_flag;
+				uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData, &SREJ_RR_flag);
+
+				if(SREJ_RR_flag == RR_PACKET){
+					//update the lower and upper window based of the received RR packet
+					updateWindow(received_RR_SREJ_sequenceNumber);
+					printf("received data packet from the server %d\n",dataLen);
+				}
+				else if(SREJ_RR_flag == SREJ_FLAG){
+					uint16_t pduPacketSize;
+					memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
+					safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+				}
 			}
-
-			uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
-
-			//update the lower and upper window based of the received RR packet
-			updateWindow(received_RR_SREJ_sequenceNumber);
-			printf("received data packet from the server %d\n",dataLen);
 		}
 		else{	//pollCall 1 second time out, need to resend the lowest packet
 
 			//get the lowest packet from the buffer and send it to server again
-			uint8_t pduPacketSize;
-			memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint8_t));
-			safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint8_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+			uint16_t pduPacketSize;
+			memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint16_t));
+			safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
 			//increament the sequence number
 			setup.clientSequenceNumber++;
@@ -281,6 +316,7 @@ STATE file_ok(){
 		while(globalWindow.current != globalWindow.upper){
 			printf("current: %d\n",globalWindow.current);
 			printf("upper: %d\n",globalWindow.upper);
+			printf("lower: %d\n",globalWindow.lower);
 
 			//read from the file
 			bytesRead = fread(tempBuffer, 1, globalWindow.packetSize, setup.filePointer);
@@ -295,7 +331,7 @@ STATE file_ok(){
 				}
 				//not the last packet
 				if(bytesRead == globalWindow.packetSize){
-					int pduPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, REGULAR_DATA_PACKET, tempBuffer, globalWindow.packetSize);
+					uint16_t pduPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, REGULAR_DATA_PACKET, tempBuffer, globalWindow.packetSize);
 					//send this packet
 					safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
@@ -307,7 +343,7 @@ STATE file_ok(){
 				}
 				//last packet with less than expected val
 				else if(bytesRead < globalWindow.packetSize){
-					int pduPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, tempBuffer, bytesRead);
+					uint16_t pduPacketSize = createPDU(&setup.setUpPacket, setup.clientSequenceNumber, END_OF_FILE_FLAG, tempBuffer, bytesRead);
 					//send this packet
 					safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
@@ -327,19 +363,32 @@ STATE file_ok(){
 			int socketVal = pollCall(0);
 			if(socketVal > -1){
 				int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+				//reset the counter to  0 if we receive anything from the server
+				setup.packetCounter = 0;
 
-				uint8_t flagReceived;
-				memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
-				//if the last flag received end
-				if(flagReceived == END_OF_FILE_FLAG_RESP){
-					return DONE;
+				uint16_t checkSum = in_cksum((uint16_t*)bufferData, dataLen);
+				if(checkSum == 0){
+					uint8_t flagReceived;
+					memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+					//if the last flag received end
+					if(flagReceived == END_OF_FILE_FLAG_RESP){
+						return DONE;
+					}
+					
+					uint8_t SREJ_RR_flag;
+					uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData, &SREJ_RR_flag);
+
+					if(SREJ_RR_flag == RR_PACKET){
+						//update the lower and upper window based of the received RR packet
+						updateWindow(received_RR_SREJ_sequenceNumber);
+						printf("received data packet from the server %d\n",dataLen);
+					}
+					else if(SREJ_RR_flag == SREJ_FLAG){
+						uint16_t pduPacketSize;
+						memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
+						safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+					}
 				}
-				
-				uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
-
-				//update the lower and upper window based of the received RR packet
-				updateWindow(received_RR_SREJ_sequenceNumber);
-				printf("received data packet from the server %d\n",dataLen);
 			}
 		}
 
@@ -354,28 +403,42 @@ STATE file_ok(){
 			if(socketVal > -1){
 				int dataLen = safeRecvfrom(socketVal, bufferData, 11, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
 
-				uint8_t flagReceived;
-				memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
-				//if the last flag received end
-				if(flagReceived == END_OF_FILE_FLAG_RESP){
-					return DONE;
+				//reset the counter to  0 if we receive anything from the server
+				setup.packetCounter = 0;
+
+				uint16_t checkSum = in_cksum((uint16_t*)bufferData, dataLen);
+				if(checkSum == 0){
+					uint8_t flagReceived;
+					memcpy(&flagReceived, bufferData + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
+					//if the last flag received end
+					if(flagReceived == END_OF_FILE_FLAG_RESP){
+						return DONE;
+					}
+
+					uint8_t SREJ_RR_flag;
+					uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData, &SREJ_RR_flag);
+
+					if(SREJ_RR_flag == RR_PACKET){
+						//update the lower and upper window based of the received RR packet
+						updateWindow(received_RR_SREJ_sequenceNumber);
+						printf("received data packet from the server %d\n",dataLen);
+					}
+					else if(SREJ_RR_flag == SREJ_FLAG){
+						uint16_t pduPacketSize;
+						memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
+						safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+					}
 				}
-
-				uint32_t received_RR_SREJ_sequenceNumber = SREJ_RR_SEQUENCE(bufferData);
-
-				//update the lower and upper window based of the received RR packet
-				updateWindow(received_RR_SREJ_sequenceNumber);
-				printf("received data packet from the server %d\n",dataLen);
 			}
 			else{	//pollCall 1 second time out, need to resend the lowest packet
 
 				//get the lowest packet from the buffer and send it to server again
-				uint8_t pduPacketSize;
-				memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint8_t));
-				safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint8_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+				uint16_t pduPacketSize;
+				memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint16_t));
+				safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
 				//increament the sequence number
-				setup.clientSequenceNumber++;
+				// setup.clientSequenceNumber++;
 
 				//incremeant the packet-counter
 				setup.packetCounter++;
@@ -412,6 +475,9 @@ STATE fileName(int firstPacketSize, char *argv[]){
 
 		if(socketVal > -1){
 			int dataLen = safeRecvfrom(socketVal, buffer, MAXBUF, 0, (struct sockaddr *) &setup.server, &serverAddrLen);
+			//reset the counter to  0 if we receive anything from the server
+			setup.packetCounter = 0;
+
 			uint8_t tempCheckBuffer[dataLen];
 
 			//copy the received amount of data from the server
@@ -471,7 +537,7 @@ int createInitialPacket(int sequenceNumber, int flag){
 	memcpy(tempPDUPacket + sizeof(uint32_t) + sizeof(uint16_t), (uint8_t *)setup.to_fileName, strlen(setup.to_fileName));
 
 	//setting up the initial packet to send it to the server (return packet size should be payloadLength + 7 bits)
-	int firstPacketSize =  createPDU(&setup.setUpPacket, sequenceNumber, flag, tempPDUPacket, payloadLength);
+	uint16_t firstPacketSize =  createPDU(&setup.setUpPacket, sequenceNumber, flag, tempPDUPacket, payloadLength);
 	free(tempPDUPacket);	//free temp PDU packet
 
 	return firstPacketSize;
@@ -566,7 +632,16 @@ int checkArgs(int argc, char * argv[])
 
 	//getting the window size and buffer size
 	globalWindow.windowSize = atoi(argv[3]);
+
+	if(globalWindow.windowSize > 1048576){
+		printf("\nWindow size specified is too big!!\n");
+		exit(EXIT_FAILURE);
+	}
 	globalWindow.packetSize = atoi(argv[4]);
+	if(globalWindow.packetSize > 1400){
+		printf("\nBuffer size specified is too big!!\n");
+		exit(EXIT_FAILURE);
+	}
 		
 	return portNumber;
 }
