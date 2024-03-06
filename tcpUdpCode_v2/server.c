@@ -205,7 +205,7 @@ STATE flushing(){
 			memcpy(&dataPacketFlag, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
 
 			//if received regular data packet, send RR
-			if(dataPacketFlag == REGULAR_DATA_PACKET){
+			if(dataPacketFlag == REGULAR_DATA_PACKET || dataPacketFlag == RESEND_DATA_PACKET || dataPacketFlag == TIMEOUT_RESENT_DATA_PACKET){
 				uint8_t payloadData[globalServerBuffer.serverBufferSize];
 				//write the packet to opened file
 				memcpy(payloadData, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
@@ -278,7 +278,7 @@ STATE flushing(){
 			memcpy(&dataPacketFlag, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
 
 			//if received regular data packet, send RR
-			if(dataPacketFlag == REGULAR_DATA_PACKET){
+			if(dataPacketFlag == REGULAR_DATA_PACKET || dataPacketFlag == RESEND_DATA_PACKET || dataPacketFlag == TIMEOUT_RESENT_DATA_PACKET){
 				uint8_t payloadData[globalServerBuffer.serverBufferSize];
 				//write the packet to opened file
 				memcpy(payloadData, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
@@ -357,7 +357,7 @@ STATE buffer(){
 					memcpy(&dataPacketFlag, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
 
 					//if received regular data packet, send RR
-					if(dataPacketFlag == REGULAR_DATA_PACKET){
+					if(dataPacketFlag == REGULAR_DATA_PACKET || dataPacketFlag == RESEND_DATA_PACKET || dataPacketFlag == TIMEOUT_RESENT_DATA_PACKET){
 						uint8_t payloadData[globalServerBuffer.serverBufferSize];
 						//write the packet to opened file
 						memcpy(payloadData, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
@@ -422,7 +422,7 @@ STATE inorder(){
 				memcpy(&dataPacketFlag, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t), sizeof(uint8_t));
 
 				//if received regular data packet, send RR
-				if(dataPacketFlag == REGULAR_DATA_PACKET){
+				if(dataPacketFlag == REGULAR_DATA_PACKET || dataPacketFlag == RESEND_DATA_PACKET || dataPacketFlag == TIMEOUT_RESENT_DATA_PACKET){
 
 					//write the packet to opened file
 					memcpy(payloadData, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), globalServerBuffer.serverBufferSize);
@@ -647,13 +647,6 @@ void processClient(int socketNum, char *argv[])
 		}
 	}
 }
-
-		//verifying the pduPacket received from the client
-		// printPDU((uint8_t *)buffer, dataLen);
-
-		// just for fun send back to client number of bytes received
-		// sprintf(buffer, "bytes: %d", dataLen);
-		// safeSendto(socketNum, buffer, strlen(buffer)+1, 0, (struct sockaddr *) & client, clientAddrLen);
 
 int checkArgs(int argc, char *argv[])
 {

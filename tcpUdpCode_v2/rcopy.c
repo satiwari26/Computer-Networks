@@ -65,6 +65,9 @@ struct setUpStruct setup;
 // void talkToServer(int socketNum, struct sockaddr_in6 * server);
 int readFromStdin(char * buffer);
 int checkArgs(int argc, char * argv[]);
+int createInitialPacket(int sequenceNumber, int flag);
+uint32_t SREJ_RR_SEQUENCE(uint8_t * data, uint8_t * flag);
+void updatePacketForResend(uint8_t flag, uint8_t * resendPacket);
 
 //state functions
 STATE start_state(int * firstPacketSize);
@@ -73,8 +76,6 @@ STATE file_ok();
 STATE endOfFile();
 STATE done();
 void processState(char *argv[]);
-int createInitialPacket(int sequenceNumber, int flag);
-uint32_t SREJ_RR_SEQUENCE(uint8_t * data, uint8_t * flag);
 
 
 int main (int argc, char *argv[])
@@ -86,10 +87,6 @@ int main (int argc, char *argv[])
 	setup.socketNum = setupUdpClientToServer(&setup.server, argv[6], setup.portNumber);
 
 	processState(argv);
-	
-	// talkToServer(socketNum, &server);
-	
-	// close(socketNum);
 
 	return 0;
 }
@@ -105,6 +102,31 @@ STATE done(){
 	free(setup.setUpPacket);
 
 	exit(EXIT_SUCCESS);
+}
+
+void updatePacketForResend(uint8_t flag, uint8_t * resendPacket){
+	//free to allocate new space
+	free(setup.setUpPacket);
+	//get the packet size
+	uint16_t packetSize;
+	memcpy(&packetSize, resendPacket, sizeof(uint16_t));
+
+	//remove the header size from the payload
+	packetSize = packetSize - 7;
+
+	//get the sequence number
+	uint32_t sequenceNumber_NO;
+	uint32_t sequenceNumber_HO;
+	memcpy(&sequenceNumber_NO, resendPacket + sizeof(uint16_t), sizeof(uint32_t));
+	sequenceNumber_HO = ntohl(sequenceNumber_NO);
+
+	//get payload data
+	uint8_t data[packetSize];
+	memcpy(data, resendPacket + sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), packetSize);
+
+	//create new pdu with the expected packet length
+	setup.setUpPacket = (uint8_t *)malloc(packetSize + 7); //7 bytes for the header
+	createPDU(&setup.setUpPacket, sequenceNumber_HO, flag, data, packetSize);
 }
 
 void processState(char *argv[]){
@@ -230,21 +252,20 @@ STATE endOfFile(){
 								printf("received data packet from the server %d\n",dataLen);
 							}
 							else if(SREJ_RR_flag == SREJ_FLAG){
+								updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
 								uint16_t pduPacketSize;
 								memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
-								safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+								safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 							}
 						}
 					}
 					else{	//pollCall 1 second time out, need to resend the lowest packet
 
 						//get the lowest packet from the buffer and send it to server again
+						updatePacketForResend(TIMEOUT_RESENT_DATA_PACKET, getPacket(globalWindow.lower));
 						uint16_t pduPacketSize;
 						memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint16_t));
-						safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
-
-						//increament the sequence number
-						// setup.clientSequenceNumber++;
+						safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
 						//incremeant the packet-counter
 						setup.packetCounter++;
@@ -286,9 +307,10 @@ STATE endOfFile(){
 					printf("received data packet from the server %d\n",dataLen);
 				}
 				else if(SREJ_RR_flag == SREJ_FLAG){
+					updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
 					uint16_t pduPacketSize;
 					memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
-					safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+					safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 				}
 			}
 		}
@@ -396,9 +418,10 @@ STATE file_ok(){
 						printf("received data packet from the server %d\n",dataLen);
 					}
 					else if(SREJ_RR_flag == SREJ_FLAG){
+						updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
 						uint16_t pduPacketSize;
 						memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
-						safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+						safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 					}
 				}
 			}
@@ -436,21 +459,20 @@ STATE file_ok(){
 						printf("received data packet from the server %d\n",dataLen);
 					}
 					else if(SREJ_RR_flag == SREJ_FLAG){
+						updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
 						uint16_t pduPacketSize;
 						memcpy(&pduPacketSize, getPacket(received_RR_SREJ_sequenceNumber), sizeof(uint16_t));
-						safeSendto(setup.socketNum, getPacket(received_RR_SREJ_sequenceNumber) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
+						safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 					}
 				}
 			}
 			else{	//pollCall 1 second time out, need to resend the lowest packet
 
 				//get the lowest packet from the buffer and send it to server again
+				updatePacketForResend(TIMEOUT_RESENT_DATA_PACKET, getPacket(globalWindow.lower));
 				uint16_t pduPacketSize;
 				memcpy(&pduPacketSize, getPacket(globalWindow.lower), sizeof(uint16_t));
-				safeSendto(setup.socketNum, getPacket(globalWindow.lower) + sizeof(uint16_t), pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
-
-				//increament the sequence number
-				// setup.clientSequenceNumber++;
+				safeSendto(setup.socketNum, setup.setUpPacket, pduPacketSize, 0, (struct sockaddr *) &setup.server, serverAddrLen);
 
 				//incremeant the packet-counter
 				setup.packetCounter++;

@@ -9,3 +9,430 @@ However, make sure to handle errors properly, especially the
 case when fork() fails (pid < 0). In your code, you're printing an error 
 message, but you may want to consider whether to exit the child process or 
 continue the loop in the parent process, depending on your application logic.
+Extra Credit: See canvas for extra credit date. If you turn in your program before the extra credit deadline you
+will receive 25% extra credit (Your program must be fulling working including the multiprocess part of the
+assignment.)
+Overview:
+In this assignment you are to write a remote file copy using UDP. To do this you will implement two programs in
+C (or C++). These are rcopy (the client program) and server. The rcopy program takes two filenames, a from-
+filename and a to-filename, as parameters. The transfer of the files is for rcopy to upload the from-file to the
+server. Server creates the output file (the to-filename), receives the data packets from rcopy and writes this data to
+the to-filename.
+To be clear, in this program, rcopy is sending a file (uploading) to the server.
+This program will use a sliding window flow control algorithm using selective-reject ARQ. This program
+must use UDP. You will need to break the file up into packets and append an application-level header you create
+to each packet as described below (e.g you are creating your own PDU).
+In order to induce errors you will not use the normal sendto(...) function. Instead, you will use a sendtoErr(...)
+function. This function will periodically drop packets and flip bits in your data You may not use the normal
+sendto(...) anywhere in either (rcopy/server) program. To catch bits flipped by the sendtoErr() function you will
+use the Internet Checksum to calculate a checksum to put into your application-level header.
+Some Coding requirements:
+1) Poll library: You must use a library (similar to program #2) for your calls to poll(). This library should
+allow you to add and remove sockets from you file descriptor set and call the poll() function. Just use
+whatever library you created/used in program #2 (e.g. my pollLib).
+2) Window/Buffering Library: You must implement your windowing on the client and buffering on the
+server as a library with an API in a separate .h/.c file. On the sender this is windowing (e.g. keeping track
+of current, upper and lower), on the receiver of the data it is just buffer management to store data when
+packets are lost.
+This means that the window and buffer data structure, and accessor functions must be defined in a single c
+(c++) file (and single .h file) separate from your other code. Both your client (rcopy) and server must use
+this code (your library) for managing the window/buffered data. You are allowed to have up to (at most) 5
+global variables in this file, but these global variables cannot be accessed by code in any other file. The
+only code that may be in this C/C++ file is your window/buffering library code. All access to your
+windowing data must be via your library’s accessor functions.
+You must implement your windowing/buffering functionality and cannot use a preexisting data structure
+(e.g. cannot use something provided by C++). Your window data structure must be a malloc()ed array of
+structures and managed as a circular queue (e.g. index into window = packet-sequence-number % window
+size).
+Note – if you directly access any of your window/buffer data structure in code other than the library file,
+your program will not be accepted.
+Programs to write (rcopy and server):
+1) rcopy: This is the client program. This program is responsible for taking the two filenames as command
+line arguments and communicating with the server program to upload the from-file from rcopy to the to-file
+created by server. The rcopy program will be run as:
+rcopy from-filename to-filename window-size buffer-size error-percent remote-machine remote-port
+where:
+from-filename: is the name of the file to upload to the server
+to-filename: is the name of file created by server (server writes to this file)
+window-size is the size of the window in PACKETS (i.e. number of packets in window)
+buffer-size: is the number of data bytes (from the file) transmitted in a data packet1
+error-percent is the percent of packets that are in error (floating point number)
+remote-machine: is the remote machine running the server
+remote-port: is the port number of the server application
+2) server: This program is responsible for receiving the requested file from rcopy. This program should never
+terminate (unless you kill it with a ctrl-c). It should continually process requests to upload files from rcopy.
+To receive full credit the server must process multiple clients simultaneously.
+The server needs to handle error conditions such as an error opening the new file by sending back an error
+packet (e.g. error flag) to the rcopy program.
+The server will receive the window-size, buffer-size and to-filename from rcopy for each file exchange.
+The server should output its port number to be used by the rcopy program. The server program is run as:
+server error-percent optional-port-number
+where:
+error-percent is the percent of packets that are in error (floating point number)
+optional-port-number allows the user to specify the port number to be used by the server
+(If this parameter is not present you should pass a 0 (zero) as the port
+number to bind().)
+Requirements:
+1) Do not use any code off the web or from other students. Do not look at any other code that provides a
+solution to this problem or parts of this problem. The work you turn in must be your entirely your own.
+You may make use of the code I handed out in lecture, any code I provided and the Internet Checksum
+code.
+2) Both rcopy and server should call the sendtoErr(...) function for all communications between rcopy and
+server (e.g. for connection setup, data, RR’s). You should use the sendtoErr function for all packet
+transmissions including transmitting the file name to the server. You should not use the normal sendto(...)
+function in your program.
+1 This buffer-size is the number of bytes you should read from disk and send in each packet. This is not the packet size. The packet will
+be bigger (since it needs to include at least an application PDU header.) The last packet of file data may be smaller and file name
+exchange packets (or similar control packets) must be no bigger than needed to communicate the required information.
+(3)
+3) You must provide a README file that includes your first and last name and your lab section time (9am,
+noon, 3pm).
+4) You may use either select() or poll() for this program. Your select/poll functionality must be in a separate
+file (e.g. it’s a library like my pollLib). You may directly use my pollLib (recommended).
+5) If the rcopy is not able to open the from-file, rcopy should print out the error message: Error: file <from-
+filename> not found. rcopy should then exit.
+6) If the server cannot open the to-file, the server should send back an error and rcopy should print out the
+error message: Error on open of output file on server: <to-filename>. This is unlikely to happen but its
+possible.
+7) You must use an application PDU header in all of your packets. The header must consist of a 32-bit
+sequence number in network order, the internet checksum and a one byte flag field. So, your packet format
+for ALL packets should be packet seq#, checksum, flag, and then data/Filename/whatever.
+8) The data payload (the data from the file is the payload) will be from 1 to 1400 bytes. This means the
+smallest application PDU containing file data is 8 bytes (7 bytes of application header and 1 byte of data)
+and the maximum PDU size will be 1407 (7 bytes for the header and 1400 bytes of file data).
+9) The window size will be less than 2 30
+.
+10) Regarding the format for the RR and SREJ packets (it is a normal header created by the sender of the
+RR/SREJ and then the seq number being RRed/SREJed.) This means the application PDU size for a
+RR/SREJ packet is 11 bytes (7 bytes of header + 4 bytes for the sequence number you are
+RR’ing/SREJ’ing). The seq number being RR/SREJ must be in network order.
+ RR PDU format: Packet Seq number, checksum, flag, RR seq number (what you are RRing)2
+ SREJ PDU format: Packet Seq number, checksum, flag, SREJ seq number (what you are SREJing)
+11) You must use the following flag values in your header. If there are other types of packets you want to send
+(meaning you need other flag values) that is ok. Please document any additional flag values in your
+readme file. You must use the following value:
+a. Flag = 1 Setup packet (rcopy to server) – optional3
+b. Flag = 2 Setup response packet (server to rcopy) - optional
+c. Flag = 3 Regular Data packet
+d. Flag = 4 Resent data packet (after receiving a SREJ, not a timeout, see also flag 7)
+e. Flag = 5 RR packet
+f. Flag = 6 SREJ packet
+g. Flag = 7 Resent data packet after a timeout (so lowest in window resent data packet.)
+h. Flag = 8 Packet contains the file name/buffer-size/window-size (rcopy to server)
+i. Flag = 9 Packet contains the response to the filename packet (server to rcopy)
+j. Flags > 9 Could be used for other things you might want (e.g. EOF, ending the connection)
+2 The packet sequence number is the sequence number created by the sender of the RR/SREJ. Both rcopy and server maintain their own
+set of sequence numbers and this is the number put into the first 4 bytes of the header.
+3 Most of you will not use flag=1 or flag =2 but will start with flag =8 and flag = 9. Flags 1 and 2 are available if you want them. Ignore
+them if they don’t make sense to you or come to office hours.
+12) Your programs needs to be written such that rcopy ends first after the file transfer has been completed. So
+if the final response packet from rcopy back to server is lost, rcopy needs to end and it is up to server to try
+10 times before terminating.
+13) If no packets are lost during the final packet exchange, the server child process should end immediately
+after receiving the final response (note it is assumed that rcopy will terminate after it sends its final
+response to the server). So the server cannot be written so that it always sends the last packet 10 times or it
+always hangs around for 10 seconds. So if no data is lost, your shutdown of the server child process has to
+be clean.
+14) In this program you should never call recvfrom() (except in the server when receiving on the main server
+socket) without first calling select()/poll(). If you find yourself thinking it would be ok to call recvfrom()
+without first calling select()/poll(), your design is probably incorrect or your understanding of the program
+is probably incorrect. Ask for help! Note – the only exception is the recvfrom() call in the main server
+process.
+15) Remove any debugging print statements before you handin your assignment.
+16) If you resend a packet 10 times you can assume the other side is down and terminate/end the process
+gracefully.
+17) Your solution for sending the filename should not permanently hang a server process/thread nor should it
+cause rcopy to terminate just because of a few lost packets. Your solution needs to handle the loss of the
+filename and the loss of the filename acknowledgement up to 10 times. This means rcopy should transmit
+the filename up to 10 times before quitting. You cannot blast out the filename multiple times, but can only
+resend the filename if a timeout occurs.
+18) When sending file data and your window closes on rcopy you should select/poll for 1-second waiting on
+RRs. If you are sending data and your window is open you should process RRs but you should NOT block
+on select/poll (use a non-blocking select/poll... so...while your window is open, send one packet, see if any
+RRs are available, if so process them, repeat the loop).
+19) When sending file data, if your window closes on rcopy (meaning you have sent an entire windows worth
+of data) and then your 1-second select/poll times out on the rcopy, you break this deadlock by resending the
+lowest PDU buffered in your window from rcopy to server (and only the lowest packet). If the server
+receives a packet lower than expected it should respond with the highest RR/SREJ allowed.
+20) Regarding buffering packets for your window processing. You cannot buffer the entire file on either the
+server or rcopy. You can only maintain buffers of the size of your window. Your buffer must be a normal
+C array (it can be an array of structs but must be an array). You cannot use any data structures built into
+the language or supplied in 3 rd party libraries. Your window management must be done by you. Also, you
+cannot move back and forward in the disk file instead of buffering. Any data held for window processing
+must be buffered in your array. Any code to process this buffer must be written by you.
+21) The maximum filename length is 100 characters. You should check the filename lengths prior to starting
+your file transfer. Print out an appropriate error message if a filename is too long and terminate rcopy.
+22) You cannot call sleep or usleep anywhere in your program.
+23) The program names, rcopy and server must be used. Also the run-time parameters should be in the order
+given. Name your makefile: Makefile.
+(5)
+24) Use datagram sockets for these programs (UDP). Your program must be written in C (C++). Also, while
+some protocol stacks do support UDP calls to connect() and accept() – you may not use these functions in
+your programs.
+25) No process (e.g rcopy, server child/thread) should permanently block when the other side terminates. For
+lost data, the sender of the data (eg. server sending file data) should try to resend packets 10 times using a
+1-second timeout. The receiver of the data (e.g. rcopy during the file data transfer) should use a 10 second
+timeout while waiting for data. This allows rcopy to terminate cleanly if it no longer can communicate
+with the server.
+26) The main server process should not terminate. It should loop waiting to process rcopy requests. The server
+should only terminate if it receives a ^c.
+27) When sending file data, the only time rcopy should block (on select/poll for 1 second) is when the window
+is closed (you have sent all the data you can.) Otherwise rcopy should not block. Use a non-blocking
+select/poll(...) (which means set your time value in your select/poll call to 0 (zero)) to check for RR’s when
+the window is open).
+28) You will not need to use the sliding window concepts for the filename exchange or after you send the last
+packet. Sliding windows only makes sense during the file data exchange.
+29) When you are sending data and your window is open the flow should be: Send one data packet, non-
+blocking check for RRs/SREJ’s and if RR’s/SREJ’s are available process all of them, goto send one data
+packet.
+30) Your server must handle multiple clients at the same time via either multithreaded (pthreads) or
+multiprocessing (fork). (You will lose 25% if this does not work.)
+31) If you use fork(), you must call sendtoErr_init() (with the random seed on) in each child before the child
+sends a packet. This means you need to call sendtoErr_init() in both the parent process and in each child
+process.
+32) Summary
+a. You can only resend lost/corrupted data. You cannot resend data that was received correctly unless
+you need to recover from a timeout (and then only 1 packet).
+b. You must send a SREJ on lost data (you cannot just wait until the other side times out. But you
+only need to send a SRJE once per lost packet – let your timeout recover from a lost SREJ.)
+c. If your window is closed and you timeout (so you have not heard about an entire window of data
+and have waited 1 second), send the lowest unacknowledged (so un-RRed) packet and wait for a
+response. The intent of this packet is to wake up (break the deadlock) the other side and hopefully
+open up your window. Continue this for 10 tries (wait 1 second, send lowest packet) or until you
+get an RR or SREJ.
+d. Do not set timers for every packet. That would be a major pain.
+e. Your blocking 1-second select(..)/poll() may only time out if:
+i. All RRs for a window are lost
+ii. or all data in a window is lost
+iii. or A SREJ packet is lost
+iv. or the recovered packet from a SREJ is lost
+v. You cannot timeout during the data transfer in any other situation
+f. Rcopy should process RRs/SREJs (without blocking) after every send(). In select() or poll() if you
+set the time value to 0 (zero) select()/poll() will check the socket for data but return immediately (so
+non-blocking).
+a. On rcopy during the data exchange, you can only call select()/poll() with a time value greater than 0
+if the window is closed. If the window is open you can only call call select()/poll() with a zero time
+value.
+b. You cannot resend good data, if a packet arrives in the current window and is not corrupted it is
+regarded as good data and should either be buffered or written to disk.
+c. You may not go back/forth on disk. You cannot use any seek (e.g. lseek(), fseek()) function call.
+What is Lorem Ipsum?
+Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.
+
+Why do we use it?
+It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout. The point of using Lorem Ipsum is that it has a more-or-less normal distribution of letters, as opposed to using 'Content here, content here', making it look like readable English. Many desktop publishing packages and web page editors now use Lorem Ipsum as their default model text, and a search for 'lorem ipsum' will uncover many web sites still in their infancy. Various versions have evolved over the years, sometimes by accident, sometimes on purpose (injected humour and the like).
+
+
+Where does it come from?
+Contrary to popular belief, Lorem Ipsum is not simply random text. It has roots in a piece of classical Latin literature from 45 BC, making it over 2000 years old. Richard McClintock, a Latin professor at Hampden-Sydney College in Virginia, looked up one of the more obscure Latin words, consectetur, from a Lorem Ipsum passage, and going through the cites of the word in classical literature, discovered the undoubtable source. Lorem Ipsum comes from sections 1.10.32 and 1.10.33 of "de Finibus Bonorum et Malorum" (The Extremes of Good and Evil) by Cicero, written in 45 BC. This book is a treatise on the theory of ethics, very popular during the Renaissance. The first line of Lorem Ipsum, "Lorem ipsum dolor sit amet..", comes from a line in section 1.10.32.
+
+The standard chunk of Lorem Ipsum used since the 1500s is reproduced below for those interested. Sections 1.10.32 and 1.10.33 from "de Finibus Bonorum et Malorum" by Cicero are also reproduced in their exact original form, accompanied by English versions from the 1914 translation by H. Rackham.
+
+Where can I get some?
+There are many variations of passages of Lorem Ipsum available, but the majority have suffered alteration in some form, by injected humour, or randomised words which don't look even slightly believable. If you are going to use a passage of Lorem Ipsum, you need to be sure there isn't anything embarrassing hidden in the middle of text. All the Lorem Ipsum generators on the Internet tend to repeat predefined chunks as necessary, making this the first true generator on the Internet. It uses a dictionary of over 200 Latin words, combined with a handful of model sentence structures, to generate Lorem Ipsum which looks reasonable. The generated Lorem Ipsum is therefore always free from repetition, injected humour, or non-characteristic words etc.
+
+5
+	paragraphs
+	words
+	bytes
+	lists
+	Start with 'Lorem
+ipsum dolor sit amet...'
+
+Translations: Can you help translate this site into a foreign language ? Please email us with details if you can help.
+There is a set of mock banners available here in three colours and in a range of standard banner sizes:
+BannersBannersBanners
+Donate: If you use this site regularly and would like to help keep the site on the Internet, please consider donating a small sum to help pay for the hosting and bandwidth bill. There is no minimum donation, any sum is appreciated - click here to donate using PayPal. Thank you for your support.
+Donate Bitcoin: 16UQLq1HZ3CNwhvgrarV6pMoA2CDjb4tyF
+NodeJS Python Interface GTK Lipsum Rails .NET Groovy
+
+The standard Lorem Ipsum passage, used since the 1500s
+"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+
+Section 1.10.32 of "de Finibus Bonorum et Malorum", written by Cicero in 45 BC
+"Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?"
+
+1914 translation by H. Rackham
+"But I must explain to you how all this mistaken idea of denouncing pleasure and praising pain was born and I will give you a complete account of the system, and expound the actual teachings of the great explorer of the truth, the master-builder of human happiness. No one rejects, dislikes, or avoids pleasure itself, because it is pleasure, but because those who do not know how to pursue pleasure rationally encounter consequences that are extremely painful. Nor again is there anyone who loves or pursues or desires to obtain pain of itself, because it is pain, but because occasionally circumstances occur in which toil and pain can procure him some great pleasure. To take a trivial example, which of us ever undertakes laborious physical exercise, except to obtain some advantage from it? But who has any right to find fault with a man who chooses to enjoy a pleasure that has no annoying consequences, or one who avoids a pain that produces no resultant pleasure?"
+
+Section 1.10.33 of "de Finibus Bonorum et Malorum", written by Cicero in 45 BC
+"At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt mollitia animi, id est laborum et dolorum fuga. Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est, omnis dolor repellendus. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat."
+
+1914 translation by H. Rackham
+"On the other hand, we denounce with righteous indignation and dislike men who are so beguiled and demoralized by the charms of pleasure of the moment, so blinded by desire, that they cannot foresee the pain and trouble that are bound to ensue; and equal blame belongs to those who fail in their duty through weakness of will, which is the same as saying through shrinking from toil and pain. These cases are perfectly simple and easy to distinguish. In a free hour, when our power of choice is untrammelled and when nothing prevents our being able to do what we like best, every pleasure is to be welcomed and every pain avoided. But in certain circumstances and owing to the claims of duty or the obligations of business it will frequently occur that pleasures have to be repudiated and annoyances accepted. The wise man therefore always holds in these matters to this principle of selection: he rejects pleasures to secure other greater pleasures, or else he endures pains to avoid worse pains."
+
+Lorem ipsum, or lipsum as it is sometimes known, is dummy text used in laying out print, graphic or web designs. The passage is attributed to an unknown typesetter in the 15th century who is thought to have scrambled parts of Cicero's De Finibus Bonorum et Malorum for use in a type specimen book. It usually begins with:
+
+“Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.”
+The purpose of lorem ipsum is to create a natural looking block of text (sentence, paragraph, page, etc.) that doesn't distract from the layout. A practice not without controversy, laying out pages with meaningless filler text can be very useful when the focus is meant to be on design, not content.
+
+The passage experienced a surge in popularity during the 1960s when Letraset used it on their dry-transfer sheets, and again during the 90s as desktop publishers bundled the text with their software. Today it's seen all around the web; on templates, websites, and stock designs. Use our generator to get your own, or read on for the authoritative history of lorem ipsum.
+
+
+Origins and Discovery
+Lorem ipsum began as scrambled, nonsensical Latin derived from Cicero's 1st-century BC text De Finibus Bonorum et Malorum.
+
+Engraving of Marcus Tullius Cicero
+CICERO
+HEDONIST ROOTS
+Until recently, the prevailing view assumed lorem ipsum was born as a nonsense text. “It's not Latin, though it looks like it, and it actually says nothing,” Before & After magazine answered a curious reader, “Its ‘words’ loosely approximate the frequency with which letters occur in English, which is why at a glance it looks pretty real.”
+
+As Cicero would put it, “Um, not so fast.”
+
+The placeholder text, beginning with the line “Lorem ipsum dolor sit amet, consectetur adipiscing elit”, looks like Latin because in its youth, centuries ago, it was Latin.
+
+Richard McClintock, a Latin scholar from Hampden-Sydney College, is credited with discovering the source behind the ubiquitous filler text. In seeing a sample of lorem ipsum, his interest was piqued by consectetur—a genuine, albeit rare, Latin word. Consulting a Latin dictionary led McClintock to a passage from De Finibus Bonorum et Malorum (“On the Extremes of Good and Evil”), a first-century B.C. text from the Roman philosopher Cicero.
+
+In particular, the garbled words of lorem ipsum bear an unmistakable resemblance to sections 1.10.32–33 of Cicero's work, with the most notable passage excerpted below:
+
+“Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.”
+A 1914 English translation by Harris Rackham reads:
+
+“Nor is there anyone who loves or pursues or desires to obtain pain of itself, because it is pain, but occasionally circumstances occur in which toil and pain can procure him some great pleasure.”
+McClintock's eye for detail certainly helped narrow the whereabouts of lorem ipsum's origin, however, the “how and when” still remain something of a mystery, with competing theories and timelines.
+
+
+Fuzzy Beginnings
+Creation timelines for the standard lorem ipsum passage vary, with some citing the 15th century and others the 20th.
+
+Typesetter selecting type for a galley
+TYPESETTER SELECTING TYPE
+REMIXING A CLASSIC
+So how did the classical Latin become so incoherent? According to McClintock, a 15th century typesetter likely scrambled part of Cicero's De Finibus in order to provide placeholder text to mockup various fonts for a type specimen book.
+
+It's difficult to find examples of lorem ipsum in use before Letraset made it popular as a dummy text in the 1960s, although McClintock says he remembers coming across the lorem ipsum passage in a book of old metal type samples. So far he hasn't relocated where he once saw the passage, but the popularity of Cicero in the 15th century supports the theory that the filler text has been used for centuries.
+
+And anyways, as Cecil Adams reasoned, “[Do you really] think graphic arts supply houses were hiring classics scholars in the 1960s?” Perhaps. But it seems reasonable to imagine that there was a version in use far before the age of Letraset.
+
+McClintock wrote to Before & After to explain his discovery;
+
+“What I find remarkable is that this text has been the industry's standard dummy text ever since some printer in the 1500s took a galley of type and scrambled it to make a type specimen book; it has survived not only four centuries of letter-by-letter resetting but even the leap into electronic typesetting, essentially unchanged except for an occasional 'ing' or 'y' thrown in. It's ironic that when the then-understood Latin was scrambled, it became as incomprehensible as Greek; the phrase 'it's Greek to me' and 'greeking' have common semantic roots!” (The editors published his letter in a correction headlined “Lorem Oopsum”).
+As an alternative theory, (and because Latin scholars do this sort of thing) someone tracked down a 1914 Latin edition of De Finibus which challenges McClintock's 15th century claims and suggests that the dawn of lorem ipsum was as recent as the 20th century. The 1914 Loeb Classical Library Edition ran out of room on page 34 for the Latin phrase “dolorem ipsum” (sorrow in itself). Thus, the truncated phrase leaves one page dangling with “do-”, while another begins with the now ubiquitous “lorem ipsum”.
+
+Whether a medieval typesetter chose to garble a well-known (but non-Biblical—that would have been sacrilegious) text, or whether a quirk in the 1914 Loeb Edition inspired a graphic designer, it's admittedly an odd way for Cicero to sail into the 21st century.
+
+
+Meaning of Lorem Ipsum
+Lorem ipsum was purposefully designed to have no meaning, but appear like real text, making it the perfect placeholder.
+
+Letraset Transfer Sheets with Lorem Ipsum
+LETRASET TRANSFER SHEETS
+INTERPRETING NONSENSE
+Don't bother typing “lorem ipsum” into Google translate. If you already tried, you may have gotten anything from "NATO" to "China", depending on how you capitalized the letters. The bizarre translation was fodder for conspiracy theories, but Google has since updated its “lorem ipsum” translation to, boringly enough, “lorem ipsum”.
+
+One brave soul did take a stab at translating the almost-not-quite-Latin. According to The Guardian, Jaspreet Singh Boparai undertook the challenge with the goal of making the text “precisely as incoherent in English as it is in Latin - and to make it incoherent in the same way”. As a result, “the Greek 'eu' in Latin became the French 'bien' [...] and the '-ing' ending in 'lorem ipsum' seemed best rendered by an '-iendum' in English.”
+
+Here is the classic lorem ipsum passage followed by Boparai's odd, yet mesmerizing version:
+
+“Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam hendrerit nisi sed sollicitudin pellentesque. Nunc posuere purus rhoncus pulvinar aliquam. Ut aliquet tristique nisl vitae volutpat. Nulla aliquet porttitor venenatis. Donec a dui et dui fringilla consectetur id nec massa. Aliquam erat volutpat. Sed ut dui ut lacus dictum fermentum vel tincidunt neque. Sed sed lacinia lectus. Duis sit amet sodales felis. Duis nunc eros, mattis at dui ac, convallis semper risus. In adipiscing ultrices tellus, in suscipit massa vehicula eu.”
+Boparai's version:
+
+“Rrow itself, let it be sorrow; let him love it; let him pursue it, ishing for its acquisitiendum. Because he will ab hold, uniess but through concer, and also of those who resist. Now a pure snore disturbeded sum dust. He ejjnoyes, in order that somewon, also with a severe one, unless of life. May a cusstums offficer somewon nothing of a poison-filled. Until, from a twho, twho chaffinch may also pursue it, not even a lump. But as twho, as a tank; a proverb, yeast; or else they tinscribe nor. Yet yet dewlap bed. Twho may be, let him love fellows of a polecat. Now amour, the, twhose being, drunk, yet twhitch and, an enclosed valley’s always a laugh. In acquisitiendum the Furies are Earth; in (he takes up) a lump vehicles bien.”
+Nick Richardson described the translation “like extreme Mallarmé, or a Burroughsian cut-up, or a paragraph of Finnegans Wake. Bits of it have surprising power: the desperate insistence on loving and pursuing sorrow, for instance, that is cheated out of its justification – an incomplete object that has been either fished for, or wished for.”
+
+Usage and Examples
+Lorem ipsum was popularized in the 1960s with Letraset's dry-transfer sheets, and later entered the digital world via Aldus PageMaker.
+
+Lorem Ipsum in Word Processing Software
+WORD PROCESSING SOFTWARE
+DIGITAL IPSUM
+The decade that brought us Star Trek and Doctor Who also resurrected Cicero—or at least what used to be Cicero—in an attempt to make the days before computerized design a little less painstaking.
+
+The French lettering company Letraset manufactured a set of dry-transfer sheets which included the lorem ipsum filler text in a variety of fonts, sizes, and layouts. These sheets of lettering could be rubbed on anywhere and were quickly adopted by graphic artists, printers, architects, and advertisers for their professional look and ease of use.
+
+Aldus Corporation, which later merged with Adobe Systems, ushered lorem ipsum into the information age with its desktop publishing software Aldus PageMaker. The program came bundled with lorem ipsum dummy text for laying out page content, and other word processors like Microsoft Word followed suit. More recently the growth of web design has helped proliferate lorem ipsum across the internet as a placeholder for future text—and in some cases the final content (this is why we proofread, kids).
+
+Controversy in the Design World
+Some claim lorem ipsum threatens to promote design over content, while others defend its value in the process of planning.
+
+Star Wars lorem ipsum
+STAR WARS LOREM IPSUM
+DESIGN OR (DIS)CONTENT
+Among design professionals, there's a bit of controversy surrounding the filler text. Controversy, as in Death to Lorem Ipsum.
+
+The strength of lorem ipsum is its weakness: it doesn't communicate. To some, designing a website around placeholder text is unacceptable, akin to sewing a custom suit without taking measurements. Kristina Halvorson notes:
+
+“I’ve heard the argument that “lorem ipsum” is effective in wireframing or design because it helps people focus on the actual layout, or color scheme, or whatever. What kills me here is that we’re talking about creating a user experience that will (whether we like it or not) be DRIVEN by words. The entire structure of the page or app flow is FOR THE WORDS.”
+Lorem ipsum is so ubiquitous because it is so versatile. Select how many paragraphs you want, copy, paste, and break the lines wherever it is convenient. Real copy doesn't work that way.
+
+As front-end developer Kyle Fiedler put it:
+
+“When you are designing with Lorem Ipsum, you diminish the importance of the copy by lowering it to the same level as any other visual element. The text simply becomes another supporting role, serving to make other aspects more aesthetic. Instead of your design enhancing the meaning of the content, your content is enhancing your design.”
+But despite zealous cries for the demise of lorem ipsum, others, such as Karen McGrane, offer appeals for moderation:
+
+“Lorem Ipsum doesn’t exist because people think the content is meaningless window dressing, only there to be decorated by designers who can’t be bothered to read. Lorem Ipsum exists because words are powerful. If you fill up your page with draft copy about your client’s business, they will read it. They will comment on it. They will be inexorably drawn to it. Presented the wrong way, draft copy can send your design review off the rails.”
+And that’s why a 15th century typesetter might have scrambled a passage of Cicero; he wanted people to focus on his fonts, to imagine their own content on the pages. He wanted people to see, and to get them to see he had to keep them from reading.
+
+When to Use Lorem Ipsum
+Generally, lorem ipsum is best suited to keeping templates from looking bare or minimizing the distractions of draft copy.
+
+Star Wars lorem ipsum
+LOREM IPSUM WEBSITE
+FORM OVER FUNCTION
+So when is it okay to use lorem ipsum? First, lorem ipsum works well for staging. It's like the props in a furniture store—filler text makes it look like someone is home. The same Wordpress template might eventually be home to a fitness blog, a photography website, or the online journal of a cupcake fanatic. Lorem ipsum helps them imagine what the lived-in website might look like.
+
+Second, use lorem ipsum if you think the placeholder text will be too distracting. For specific projects, collaboration between copywriters and designers may be best, however, like Karen McGrane said, draft copy has a way of turning any meeting about layout decisions into a discussion about word choice. So don't be afraid to use lorem ipsum to keep everyone focused.
+
+One word of caution: make sure your client knows that lorem ipsum is filler text. You don't want them wondering why you filled their website with a foreign language, and you certainly don't want anyone prematurely publishing it.
+
+Lorem Ipsum All the Things
+Coming full circle, the internet's remixing of the now infamous lorem ipsum passage has officially elevated it to pop culture status.
+
+Bacon Ipsum Generator
+BACON IPSUM GENERATOR
+BECAUSE IT'S THE INTERNET
+There was that time artists at Sequence opted to hand-Sharpie the lorem ipsum passage on a line of paper bags they designed for Chipotle—the result being a mixture of avant-garde, inside joke, and Sharpie-stained tables. Those with an eye for detail may have caught a tribute to the classic text in an episode of Mad Men (S6E1 around 1:18:55 for anyone that didn't). And here is a lorem ipsum tattoo.
+
+Of course, we'd be remiss not to include the veritable cadre of lorem ipsum knock offs featuring:
+
+Bacon Ipsum – Served all day. “Bacon ipsum dolor amet chicken turducken spare ribs.”
+
+Hipster Ipsum – In case you're in need of a “shoreditch direct trade four dollar toast copper mug.”
+
+Corporate Ipsum – “Leveraging agile frameworks to provide a robust synopsis” from eight to five.
+
+Legal Ipsum – Fully unlicensed legalese for those times you don't want to pay $400/hr.
+
+Not to mention, Cupcake Ipsum, Bob Ross Ipsum (“happy little clouds”), and the furry Cat Ipsum. And in case that's not enough, check out our very own Ultimate List of Lorem Ipsum Generators.
+
+So there you have it. Lorem ipsum: the nonsense words unable to fully escape meaning.
+
+Original Source Text
+Below are the original Latin passages from which Lorem Ipsum was derived, paired with their 1914 translations by H. Rackham.
+
+Cicero's De finibus bonorum et malorum
+CICERO'S DE FINIBUS OPENING PAGE
+SECTION 1.10.32 OF CICERO'S “DE FINIBUS BONORUM ET MALORUM”
+Original Latin text:
+
+“Sed ut perspiciatis, unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam eaque ipsa, quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt, explicabo. Nemo enim ipsam voluptatem, quia voluptas sit, aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos, qui ratione voluptatem sequi nesciunt, neque porro quisquam est, qui dolorem ipsum, quia dolor sit amet consectetur adipisci[ng] velit, sed quia non numquam [do] eius modi tempora inci[di]dunt, ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit, qui in ea voluptate velit esse, quam nihil molestiae consequatur, vel illum, qui dolorem eum fugiat, quo voluptas nulla pariatur?”
+Translation by H. Rackham:
+
+“But I must explain to you how all this mistaken idea of denouncing of a pleasure and praising pain was born and I will give you a complete account of the system, and expound the actual teachings of the great explorer of the truth, the master-builder of human happiness. No one rejects, dislikes, or avoids pleasure itself, because it is pleasure, but because those who do not know how to pursue pleasure rationally encounter consequences that are extremely painful. Nor again is there anyone who loves or pursues or desires to obtain pain of itself, because it is pain, but occasionally circumstances occur in which toil and pain can procure him some great pleasure. To take a trivial example, which of us ever undertakes laborious physical exercise, except to obtain some advantage from it? But who has any right to find fault with a man who chooses to enjoy a pleasure that has no annoying consequences, or one who avoids a pain that produces no resultant pleasure?”
+SECTION 1.10.33 OF CICERO'S “DE FINIBUS BONORUM ET MALORUM”
+Original Latin text:
+
+“At vero eos et accusamus et iusto odio dignissimos ducimus, qui blanditiis praesentium voluptatum deleniti atque corrupti, quos dolores et quas molestias excepturi sint, obcaecati cupiditate non provident, similique sunt in culpa, qui officia deserunt mollitia animi, id est laborum et dolorum fuga. Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio, cumque nihil impedit, quo minus id, quod maxime placeat, facere possimus, omnis voluptas assumenda est, omnis dolor repellendus. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet, ut et voluptates repudiandae sint et molestiae non recusandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat…”
+Translation by H. Rackham:
+
+“On the other hand, we denounce with righteous indignation and dislike men who are so beguiled and demoralized by the charms of pleasure of the moment, so blinded by desire, that they cannot foresee the pain and trouble that are bound to ensue; and equal blame belongs to those who fail in their duty through weakness of will, which is the same as saying through shrinking from toil and pain. These cases are perfectly simple and easy to distinguish. In a free hour, when our power of choice is untrammeled and when nothing prevents our being able to do what we like best, every pleasure is to be welcomed and every pain avoided. But in certain circumstances and owing to the claims of duty or the obligations of business it will frequently occur that pleasures have to be repudiated and annoyances accepted. The wise man therefore always holds in these matters to this principle of selection: he rejects pleasures to secure other greater pleasures, or else he endures pains to avoid worse pains.”
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet. Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa. Vestibulum lacinia arcu eget nulla. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. 
+
+Curabitur sodales ligula in libero. Sed dignissim lacinia nunc. Curabitur tortor. Pellentesque nibh. Aenean quam. In scelerisque sem at dolor. Maecenas mattis. Sed convallis tristique sem. Proin ut ligula vel nunc egestas porttitor. Morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. Fusce ac turpis quis ligula lacinia aliquet. Mauris ipsum. Nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. 
+
+Quisque volutpat condimentum velit. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nam nec ante. Sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis. Nulla facilisi. Ut fringilla. Suspendisse potenti. Nunc feugiat mi a tellus consequat imperdiet. Vestibulum sapien. Proin quam. Etiam ultrices. Suspendisse in justo eu magna luctus suscipit. Sed lectus. 
+
+Integer euismod lacus luctus magna. Quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Morbi lacinia molestie dui. Praesent blandit dolor. Sed non quam. In vel mi sit amet augue congue elementum. Morbi in ipsum sit amet pede facilisis laoreet. Donec lacus nunc, viverra nec, blandit vel, egestas et, augue. Vestibulum tincidunt malesuada tellus. Ut ultrices ultrices enim. Curabitur sit amet mauris. Morbi in dui quis est pulvinar ullamcorper. Nulla facilisi. 
+
+Integer lacinia sollicitudin massa. Cras metus. Sed aliquet risus a tortor. Integer id quam. Morbi mi. Quisque nisl felis, venenatis tristique, dignissim in, ultrices sit amet, augue. Proin sodales libero eget ante. Nulla quam. Aenean laoreet. Vestibulum nisi lectus, commodo ac, facilisis ac, ultricies eu, pede. Ut orci risus, accumsan porttitor, cursus quis, aliquet eget, justo. 
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet. Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa. Vestibulum lacinia arcu eget nulla. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Curabitur sodales ligula in libero. 
+
+Sed dignissim lacinia nunc. Curabitur tortor. Pellentesque nibh. Aenean quam. In scelerisque sem at dolor. Maecenas mattis. Sed convallis tristique sem. Proin ut ligula vel nunc egestas porttitor. Morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. Fusce ac turpis quis ligula lacinia aliquet. Mauris ipsum. 
+
+Nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. Quisque volutpat condimentum velit. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nam nec ante. Sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis. Nulla facilisi. Ut fringilla. Suspendisse potenti. Nunc feugiat mi a tellus consequat imperdiet. Vestibulum sapien. Proin quam. Etiam ultrices. 
+
+Suspendisse in justo eu magna luctus suscipit. Sed lectus. Integer euismod lacus luctus magna. Quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Morbi lacinia molestie dui. Praesent blandit dolor. Sed non quam. In vel mi sit amet augue congue elementum. Morbi in ipsum sit amet pede facilisis laoreet. Donec lacus nunc, viverra nec, blandit vel, egestas et, augue. Vestibulum tincidunt malesuada tellus. Ut ultrices ultrices enim. Curabitur sit amet mauris. Morbi in dui quis est pulvinar ullamcorper. 
+
+Nulla facilisi. Integer lacinia sollicitudin massa. Cras metus. Sed aliquet risus a tortor. Integer id quam. Morbi mi. Quisque nisl felis, venenatis tristique, dignissim in, ultrices sit amet, augue. Proin sodales libero eget ante. Nulla quam. Aenean laoreet. Vestibulum nisi lectus, commodo ac, facilisis ac, ultricies eu, pede. 
+
