@@ -38,7 +38,7 @@ extern struct windowVars globalWindow;
  * @brief
  * setup the buffer to store the data packets
 */
-void init();
+void init(uint32_t sequenceNumber);
 
 /**
  * @brief
@@ -135,5 +135,11 @@ void invalidationCheck();
  * to get the specific packet form the buffer
 */
 uint8_t * getServerPacket(uint32_t sequenceNumber);
+
+/**
+ * @brief
+ * clean the server buffers and validation memory allocation
+*/
+void cleanServerUP();
 
 #endif

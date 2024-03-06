@@ -94,13 +94,26 @@ int main (int argc, char *argv[])
 	return 0;
 }
 
+STATE done(){
+	fclose(setup.filePointer);
+	//clean up the client window api dynamic buffer
+	freeWindowBuffer();
+
+	//freeing other misc pointers used in the program
+	free(setup.from_fileName);
+	free(setup.to_fileName);
+	free(setup.setUpPacket);
+
+	exit(EXIT_SUCCESS);
+}
+
 void processState(char *argv[]){
 	setup.clientSequenceNumber = 0;
 	STATE state = START_STATE;
 	int firstPacketSize = 0;
 
 
-	while(state != DONE){
+	while(1){
 		switch(state){
 			case START_STATE:
 				state = start_state(&firstPacketSize);
@@ -119,8 +132,7 @@ void processState(char *argv[]){
 			break;
 
 			case DONE:
-				fclose(setup.filePointer);
-				exit(EXIT_SUCCESS);
+				state = done();
 			break;
 
 			default:
@@ -300,7 +312,7 @@ STATE endOfFile(){
 
 STATE file_ok(){
 	//initialize my window api
-	init();
+	init(setup.clientSequenceNumber);
 
 	uint8_t tempBuffer[globalWindow.packetSize];
 	uint16_t bytesRead;
@@ -633,7 +645,7 @@ int checkArgs(int argc, char * argv[])
 	//getting the window size and buffer size
 	globalWindow.windowSize = atoi(argv[3]);
 
-	if(globalWindow.windowSize > 1048576){
+	if(globalWindow.windowSize > 1073741824){
 		printf("\nWindow size specified is too big!!\n");
 		exit(EXIT_FAILURE);
 	}

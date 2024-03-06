@@ -6,7 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/home/chero/Networks/tcpUdpCode_v2/rcopy",
-            "args": ["/home/chero/Networks/tcpUdpCode_v2/flowers.bmp", "/home/chero/Networks/tcpUdpCode_v2/flow.bmp", "15", "300", "0.4", "localhost", "5000"],
+            "args": ["/home/chero/Networks/tcpUdpCode_v2/test.txt", "/home/chero/Networks/tcpUdpCode_v2/hello.txt", "10", "10", "0.4", "localhost", "5000"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

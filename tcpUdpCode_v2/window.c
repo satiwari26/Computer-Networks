@@ -6,16 +6,31 @@ struct serverBuffer globalServerBuffer;
 
 //-------------------Window functions---------------------------------//
 
-void init(){
+void init(uint32_t sequenceNumber){
     //creating the buffer to store the data packets
     globalWindow.windowBuffer = (uint8_t**)malloc(globalWindow.windowSize * sizeof(uint8_t*));
-    globalWindow.lower = 1;
-    globalWindow.current = 1;
+    //initialize the window to the current sequence number
+    globalWindow.lower = sequenceNumber;
+    globalWindow.current = sequenceNumber;
     globalWindow.upper = globalWindow.lower + globalWindow.windowSize;
 
     //allocate the memory for each packet in the window, 1 extra byte to store the size of the packet
     for(int i=0;i<globalWindow.windowSize;i++){
         globalWindow.windowBuffer[i] = (uint8_t *)malloc(MAX_PACKET_SIZE + sizeof(uint16_t));
+    }
+}
+
+void freeWindowBuffer(){
+    //freeing the server window size for each block
+    for(int i=0;i<globalWindow.windowSize;i++){
+        if(globalWindow.windowBuffer[i] != NULL){
+            free(globalWindow.windowBuffer[i]);
+        }
+    }
+
+    //free the serverBuffer itself
+    if(globalWindow.windowBuffer != NULL){
+        free(globalWindow.windowBuffer);
     }
 }
 
@@ -80,18 +95,6 @@ void printEntireWindow(){
     }
 }
 
-void freeWindowBuffer(){
-    for(int i=0;i<globalWindow.windowSize;i++){
-        free(globalWindow.windowBuffer[i]);
-    }
-
-    //now free the window buffer that is holding that data
-    free(globalWindow.windowBuffer);
-}
-
-
-
-
 //-------------------buffer functions---------------------------------//
 
 void initServerbuffer(){
@@ -108,6 +111,25 @@ void initServerbuffer(){
 
         //setting the validation buffer to 0
         globalServerBuffer.validationBuffer[i] = invalid;
+    }
+}
+
+void cleanServerUP(){
+    //freeing the server window size for each block
+    for(int i=0;i<globalServerBuffer.serverWindowSize;i++){
+        if(globalServerBuffer.ServerBuffer[i] != NULL){
+            free(globalServerBuffer.ServerBuffer[i]);
+        }
+    }
+
+    //freeing the validation buffer
+    if(globalServerBuffer.validationBuffer != NULL){
+        free(globalServerBuffer.validationBuffer);
+    }
+
+    //free the serverBuffer itself
+    if(globalServerBuffer.ServerBuffer != NULL){
+        free(globalServerBuffer.ServerBuffer);
     }
 }
 

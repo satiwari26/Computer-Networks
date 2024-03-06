@@ -161,6 +161,22 @@ int createEOF_resp(int flag){
 	return createEOF_size;
 }
 
+STATE done(){
+	fclose(setup.toFilePointer);
+	//remove the allocated buffer from the space
+	cleanServerUP();
+
+	//clean other misc dynamically allocated memory
+	if(setup.setUpPacket != NULL){
+		free(setup.setUpPacket);
+	}
+	if(setup.receivedSetUpPacket != NULL){
+		free(setup.receivedSetUpPacket);
+	}
+
+	exit(EXIT_SUCCESS);
+}
+
 STATE flushing(){
 	//check for the validation in the buffer
 	while(1){
@@ -296,8 +312,6 @@ STATE flushing(){
 
 					//flush that buffer location
 					flushPacket(indexVal);
-
-						//print the receive packet in the data
 				}
 			}
 			//increament the expected
@@ -573,7 +587,7 @@ void processState(char *argv[]){
 	int firstPacketSize = 0;
 
 
-	while(state != DONE){
+	while(1){
 		switch(state){
 			case START_STATE:
 				state = start_state(&firstPacketSize);
@@ -592,8 +606,7 @@ void processState(char *argv[]){
 			break;
 
 			case DONE:
-				fclose(setup.toFilePointer);
-				exit(EXIT_SUCCESS);
+				state = done();
 			break;
 
 			default:
@@ -618,19 +631,19 @@ void processClient(int socketNum, char *argv[])
 		uint16_t checkSum = in_cksum((uint16_t*)setup.receivedSetUpPacket, setup.firstPacketdataLen);
 		if(checkSum == 0){
 			//fork and start the child process state machines
-			// pid_t pid;
+			pid_t pid;
 
-			// pid = fork();
-			// if(pid < 0){
-			// 	printf("forking for the child process failed\n");
-			// 	exit(EXIT_FAILURE);
-			// }
-			// else if(pid == 0){
+			pid = fork();
+			if(pid < 0){
+				printf("forking for the child process failed\n");
+				exit(EXIT_FAILURE);
+			}
+			else if(pid == 0){
 				//child process
 				close(setup.socketNum);	//close the original socket for the child
 				processState(argv);
-			// 	exit(EXIT_SUCCESS);
-			// }
+				exit(EXIT_SUCCESS);
+			}
 		}
 	}
 }

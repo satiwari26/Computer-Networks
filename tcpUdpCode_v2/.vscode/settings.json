@@ -3,6 +3,10 @@
         "cpe464.h": "c",
         "gethostbyname.h": "c",
         "string.h": "c",
-        "in.h": "c"
+        "in.h": "c",
+        "*.tcc": "c",
+        "unordered_map": "c",
+        "numeric": "c",
+        "ostream": "c"
     }
 }
