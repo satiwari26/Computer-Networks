@@ -1,6 +1,3 @@
-/* Server side - UDP Code				    */
-/* By Hugh Smith	4/1/2017	*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -164,7 +161,10 @@ int createEOF_resp(int flag){
 STATE done(){
 	fclose(setup.toFilePointer);
 	//remove the allocated buffer from the space
-	cleanServerUP();
+	if(setup.errorRate != 0.0){
+		//0% error so buffer never got set-up
+		cleanServerUP();
+	}
 
 	//clean other misc dynamically allocated memory
 	if(setup.setUpPacket != NULL){
@@ -230,7 +230,7 @@ STATE flushing(){
 			}
 			else if(dataPacketFlag == END_OF_FILE_FLAG){
 
-				uint8_t packetSizeBuffered;
+				uint16_t packetSizeBuffered;
 				memcpy(&packetSizeBuffered, globalServerBuffer.ServerBuffer[indexVal], sizeof(uint16_t));
 
 				if(packetSizeBuffered > 8){	//case when we read less bytes from the file than the standard require
@@ -448,7 +448,7 @@ STATE inorder(){
 						//write the packet to opened file
 						memcpy(payloadData, setup.receivedSetUpPacket + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t), EOF_payload_len);
 						size_t bytesWritten = fwrite(payloadData, 1, EOF_payload_len, setup.toFilePointer);
-						if(bytesWritten != globalServerBuffer.serverBufferSize){
+						if(bytesWritten != EOF_payload_len){
 							printf("Error writing data in the disk.\n");
 						}
 						fflush(setup.toFilePointer);
@@ -641,6 +641,8 @@ void processClient(int socketNum, char *argv[])
 			else if(pid == 0){
 				//child process
 				close(setup.socketNum);	//close the original socket for the child
+				//for requirement purpose: call err_init
+				sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_OFF);
 				processState(argv);
 				exit(EXIT_SUCCESS);
 			}

@@ -1,6 +1,3 @@
-// // Client side - UDP Code				    
-// // By Hugh Smith	4/1/2017		
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
