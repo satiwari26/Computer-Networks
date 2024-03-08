@@ -268,7 +268,7 @@ void PacketManager::printType(int flag, char * buf)
 		break;
 		  
 		case 4: 
-			MSG_PRINT(" -UNUSED FLAG Value");
+			MSG_PRINT(" -Resent Packet");
 		break;
 		  
 		case 5: 
@@ -284,7 +284,7 @@ void PacketManager::printType(int flag, char * buf)
 		break;
 		
 		case 7: 
-			MSG_PRINT(" -FNAME    ");
+			MSG_PRINT(" -Timeout Packet    ");
 		break;
 
 		case 8:

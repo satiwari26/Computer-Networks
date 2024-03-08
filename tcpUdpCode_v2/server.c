@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 #include "gethostbyname.h"
 #include "networks.h"
@@ -61,6 +63,7 @@ STATE done();
 void processClient(int socketNum, char *argv[]);
 int checkArgs(int argc, char *argv[]);
 FILE * getFile(char * fromFileName, int fileNameSize);
+void sigintHandler(int sig);
 
 //create RR or SREJ packets method
 int create_RR(uint32_t RR_sequenceNumber, int flag);
@@ -73,9 +76,12 @@ int main ( int argc, char *argv[]  )
 	setup.errorRate = 0;
 
 	setup.portNumber = checkArgs(argc, argv);
-	sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_OFF);
+	sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
 	
 	setup.socketNum = udpServerSetup(setup.portNumber);
+
+	// Set up signal handler for SIGINT (Ctrl+C)
+    signal(SIGINT, sigintHandler);
 
 	processClient(setup.socketNum, argv);
 
@@ -141,7 +147,7 @@ int create_SREJ(uint32_t SREJ_sequenceNumber){
 	memcpy(SREJ_sequenceNumberData, &SREJ_sequenceNumber_NO, sizeof(uint32_t));
 
 	//setting up the initial packet to send it to the server (return packet size should be payloadLength + 7 bits)
-	int firstPacketSize =  createPDU(&setup.setUpPacket, SREJ_sequenceNumber, SREJ_FLAG, SREJ_sequenceNumberData, sizeof(uint32_t));
+	int firstPacketSize =  createPDU(&setup.setUpPacket, setup.serverSequenceNumber, SREJ_FLAG, SREJ_sequenceNumberData, sizeof(uint32_t));
 
 	return firstPacketSize;
 }
@@ -183,22 +189,26 @@ STATE flushing(){
 		uint32_t indexVal = globalServerBuffer.expected % globalServerBuffer.serverWindowSize;
 		uint32_t currSequenceNumber_HO;
 		uint32_t currSequenceNumber_NO;
-		printf("expected: %d\n",globalServerBuffer.expected);
-		printf("highest: %d\n",globalServerBuffer.highest);
 		//extracting the sequence number from the expected index val
 		memcpy(&currSequenceNumber_NO, globalServerBuffer.ServerBuffer[indexVal] + sizeof(uint16_t), sizeof(uint32_t));
 		currSequenceNumber_HO = ntohl(currSequenceNumber_NO);
-		printf("validation, index: %d, %d\n",globalServerBuffer.validationBuffer[indexVal], indexVal);
-		//when exptected reached the highest
+		//when expected is less than highest and it is invalid
 		if(globalServerBuffer.expected < globalServerBuffer.highest && globalServerBuffer.validationBuffer[indexVal] == invalid){
 			//create and send the SREJ
 			int SREJ_packet_size = create_SREJ(globalServerBuffer.expected);
 			//send the SREJ
 			safeSendto(setup.socketNum, setup.setUpPacket, SREJ_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+			setup.serverSequenceNumber++;
+
+			//create the RR extected and send RR expected
+			int RR_PDU_SIZE = create_RR(globalServerBuffer.expected, RR_PACKET);
+			safeSendto(setup.socketNum, setup.setUpPacket, RR_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+			setup.serverSequenceNumber++;
 
 			//return to the Buffer state
 			return BUFFER;
 		}
+		//when exptected reached the highest
 		else if(globalServerBuffer.expected == globalServerBuffer.highest){
 			//extracting out the data flag
 			uint8_t dataPacketFlag;
@@ -253,7 +263,6 @@ STATE flushing(){
 					safeSendto(setup.socketNum, setup.setUpPacket, EOF_PDU_SIZE, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
 					setup.serverSequenceNumber++;
 
-						//print the receive packet in the data
 				}
 				else{
 					//don't write it to the file
@@ -290,8 +299,6 @@ STATE flushing(){
 
 				//flush that buffer location
 				flushPacket(indexVal);
-
-					//print the receive packet in the data
 			}
 			else if(dataPacketFlag == END_OF_FILE_FLAG){
 
@@ -373,11 +380,11 @@ STATE buffer(){
 					globalServerBuffer.expected++;
 					return FLUSHING;
 				}
-				else if(globalServerBuffer.receive < globalServerBuffer.expected){	//if SREJ didn't make it and we receive lower than expected, resend SREJ
-					//create and send the SREJ
-					int SREJ_packet_size = create_SREJ(globalServerBuffer.expected);
-					//send the SREJ
-					safeSendto(setup.socketNum, setup.setUpPacket, SREJ_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+				else if(globalServerBuffer.receive < globalServerBuffer.expected){	//if SREJ didn't make it and we receive lower than expected, send RR.
+					//create and send the RR
+					int RR_packet_size = create_RR(globalServerBuffer.expected, RR_PACKET);
+					//send the RR
+					safeSendto(setup.socketNum, setup.setUpPacket, RR_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
 					setup.serverSequenceNumber++;
 				}
 			}
@@ -413,9 +420,7 @@ STATE inorder(){
 		//convert the receive network sequence number to host order
 		globalServerBuffer.receive = ntohl(tempReceive_HO);
 
-		if(checkSum == 0){	//if checksum pass then perform other action 
-			printf("Checksum passed!\n\n");
-		
+		if(checkSum == 0){	//if checksum pass then perform other action 		
 			if(globalServerBuffer.receive == globalServerBuffer.expected){
 				//extracting out the data flag
 				uint8_t dataPacketFlag;
@@ -487,8 +492,6 @@ STATE inorder(){
 			}
 			//if recv is greater than what we expected, need to handel that in the buffer
 			else if(globalServerBuffer.receive > globalServerBuffer.expected){
-				printf("Received the non-expected sequence number\n\n");
-
 				//setting up the server buffer
 				initServerbuffer();
 
@@ -496,7 +499,7 @@ STATE inorder(){
 				int SREJ_packet_size = create_SREJ(globalServerBuffer.expected);
 				//send the SREJ
 				safeSendto(setup.socketNum, setup.setUpPacket, SREJ_packet_size, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
-
+				setup.serverSequenceNumber++;
 				//buffer the receive packet
 				addServerPacket(setup.receivedSetUpPacket, dataPacketReceivedSize);
 
@@ -550,6 +553,7 @@ STATE start_state(int * firstPacketSize){
 		}
 		//send the failed file opening falg to the client and end this process.
 		safeSendto(setup.socketNum, setup.setUpPacket, *firstPacketSize, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+		setup.serverSequenceNumber++;
 		return DONE;
 	}
 	else{
@@ -561,6 +565,7 @@ STATE start_state(int * firstPacketSize){
 		}
 		//send the okay file flag
 		safeSendto(setup.socketNum, setup.setUpPacket, *firstPacketSize, 0, (struct sockaddr *) &setup.client, setup.clientAddrLen);
+		setup.serverSequenceNumber++;
 	}
 
 	//running while loop and setting up the initial connection with polling for one sec
@@ -616,12 +621,25 @@ void processState(char *argv[]){
 	}
 }
 
+void sigintHandler(int sig)
+{
+    printf("Ctrl+C pressed. Terminating all child processes and exiting...\n");
+
+    // send signal to all the child process to finish
+    kill(0, SIGTERM);
+
+    // Wait for all child processes to terminate
+    while (wait(NULL) > 0);
+
+    // Exit the parent process
+    exit(EXIT_SUCCESS);
+}
+
 void processClient(int socketNum, char *argv[])
 {
 	setup.firstPacketdataLen = 0;
 	setup.receivedSetUpPacket = (uint8_t *) malloc(MAXBUF);	  
 	setup.clientAddrLen = sizeof(setup.client);	
-	
 
 	//main process loop
 	while (1)
@@ -642,7 +660,7 @@ void processClient(int socketNum, char *argv[])
 				//child process
 				close(setup.socketNum);	//close the original socket for the child
 				//for requirement purpose: call err_init
-				sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_OFF);
+				sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
 				processState(argv);
 				exit(EXIT_SUCCESS);
 			}

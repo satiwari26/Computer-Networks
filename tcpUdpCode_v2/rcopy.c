@@ -60,7 +60,6 @@ struct setUpStruct{
 struct setUpStruct setup;
 
 // void talkToServer(int socketNum, struct sockaddr_in6 * server);
-int readFromStdin(char * buffer);
 int checkArgs(int argc, char * argv[]);
 int createInitialPacket(int sequenceNumber, int flag);
 uint32_t SREJ_RR_SEQUENCE(uint8_t * data, uint8_t * flag);
@@ -79,7 +78,7 @@ int main (int argc, char *argv[])
  {
 	
 	setup.portNumber = checkArgs(argc, argv);
-	sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_OFF);
+	sendErr_init(setup.errorRate, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
 	
 	setup.socketNum = setupUdpClientToServer(&setup.server, argv[6], setup.portNumber);
 
@@ -217,10 +216,6 @@ STATE endOfFile(){
 			else{
 				//if window is close
 				while(globalWindow.current == globalWindow.upper){
-					//if 10 tries fail return to done state
-					if(setup.packetCounter == 10){
-						return DONE;
-					}
 					//poll for 1s
 					int socketVal = pollCall(1000);
 					if(socketVal > -1){
@@ -246,7 +241,6 @@ STATE endOfFile(){
 							if(SREJ_RR_flag == RR_PACKET){
 								//update the lower and upper window based of the received RR packet
 								updateWindow(received_RR_SREJ_sequenceNumber);
-								printf("received data packet from the server %d\n",dataLen);
 							}
 							else if(SREJ_RR_flag == SREJ_FLAG){
 								updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
@@ -257,6 +251,10 @@ STATE endOfFile(){
 						}
 					}
 					else{	//pollCall 1 second time out, need to resend the lowest packet
+						//if 10 tries fail return to done state
+						if(setup.packetCounter == 10){
+							return DONE;
+						}
 
 						//get the lowest packet from the buffer and send it to server again
 						updatePacketForResend(TIMEOUT_RESENT_DATA_PACKET, getPacket(globalWindow.lower));
@@ -274,10 +272,6 @@ STATE endOfFile(){
 	//the last packet have been sent, waiting for the ack back
 	setup.packetCounter = 0;
 	while(1){
-		//if 10 tries fail return to done state
-		if(setup.packetCounter == 10){
-			return DONE;
-		}
 		//poll for 1s
 		int socketVal = pollCall(1000);
 		if(socketVal > -1){
@@ -301,7 +295,6 @@ STATE endOfFile(){
 				if(SREJ_RR_flag == RR_PACKET){
 					//update the lower and upper window based of the received RR packet
 					updateWindow(received_RR_SREJ_sequenceNumber);
-					printf("received data packet from the server %d\n",dataLen);
 				}
 				else if(SREJ_RR_flag == SREJ_FLAG){
 					updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
@@ -312,6 +305,10 @@ STATE endOfFile(){
 			}
 		}
 		else{	//pollCall 1 second time out, need to resend the lowest packet
+			//if 10 tries fail return to done state
+			if(setup.packetCounter == 10){
+				return DONE;
+			}
 
 			//get the lowest packet from the buffer and send it to server again
 			uint16_t pduPacketSize;
@@ -345,10 +342,6 @@ STATE file_ok(){
 	while (1) {
 		//while window is open
 		while(globalWindow.current != globalWindow.upper){
-			printf("current: %d\n",globalWindow.current);
-			printf("upper: %d\n",globalWindow.upper);
-			printf("lower: %d\n",globalWindow.lower);
-
 			//read from the file
 			bytesRead = fread(tempBuffer, 1, globalWindow.packetSize, setup.filePointer);
 			//0 bytes read that means we have send the EOF packet already
@@ -412,7 +405,6 @@ STATE file_ok(){
 					if(SREJ_RR_flag == RR_PACKET){
 						//update the lower and upper window based of the received RR packet
 						updateWindow(received_RR_SREJ_sequenceNumber);
-						printf("received data packet from the server %d\n",dataLen);
 					}
 					else if(SREJ_RR_flag == SREJ_FLAG){
 						updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
@@ -426,10 +418,6 @@ STATE file_ok(){
 
 		//if window is closed
 		while(globalWindow.current == globalWindow.upper){
-			//if 10 tries fail return to done state
-			if(setup.packetCounter == 10){
-				return DONE;
-			}
 			//poll for 1s
 			int socketVal = pollCall(1000);
 			if(socketVal > -1){
@@ -453,7 +441,6 @@ STATE file_ok(){
 					if(SREJ_RR_flag == RR_PACKET){
 						//update the lower and upper window based of the received RR packet
 						updateWindow(received_RR_SREJ_sequenceNumber);
-						printf("received data packet from the server %d\n",dataLen);
 					}
 					else if(SREJ_RR_flag == SREJ_FLAG){
 						updatePacketForResend(RESEND_DATA_PACKET, getPacket(received_RR_SREJ_sequenceNumber));
@@ -465,6 +452,10 @@ STATE file_ok(){
 			}
 			else{	//pollCall 1 second time out, need to resend the lowest packet
 
+				//if 10 tries fail return to done state
+				if(setup.packetCounter == 10){
+					return DONE;
+				}
 				//get the lowest packet from the buffer and send it to server again
 				updatePacketForResend(TIMEOUT_RESENT_DATA_PACKET, getPacket(globalWindow.lower));
 				uint16_t pduPacketSize;
@@ -602,31 +593,6 @@ STATE start_state(int * firstPacketSize){
 	addToPollSet(setup.socketNum);
 
 	return FILENAME;	//returns the file name state after setting everything up
-}
-
-int readFromStdin(char * buffer)
-{
-	char aChar = 0;
-	int inputLen = 0;        
-	
-	// Important you don't input more characters than you have space 
-	buffer[0] = '\0';
-	printf("Enter data: ");
-	while (inputLen < (MAXBUF - 1) && aChar != '\n')
-	{
-		aChar = getchar();
-		if (aChar != '\n')
-		{
-			buffer[inputLen] = aChar;
-			inputLen++;
-		}
-	}
-	
-	// Null terminate the string
-	buffer[inputLen] = '\0';
-	inputLen++;
-	
-	return inputLen;
 }
 
 int checkArgs(int argc, char * argv[])

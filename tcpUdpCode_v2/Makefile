@@ -8,7 +8,7 @@ CFLAGS = -g -Wall
 OBJS = networks.o gethostbyname.o pollLib.o safeUtil.o createPDU.o window.o
 
 # Uncomment next two lines if you're using sendtoErr() library
-LIBS += libcpe464.2.21.a -lstdc++ -ldl
+LIBS += libcpe464.a.b.a -lstdc++ -ldl
 CFLAGS += -D__LIBCPE464_
 
 all: udpAll
